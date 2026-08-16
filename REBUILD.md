@@ -15,11 +15,13 @@ smoke/                  仿真用例：mock ctx/服务真实求值插件 impl（
 loader.js               磁盘级加载器（桩固定入口，改它不用重新 define）
 shared/host.js          共享辅助（esc/注册重试/持久化/日志缓存/base64）
 plugins/<key>/          每插件一个文件夹：plugin.json（元数据）+ payload.json（生成）+ impl
-  toolbox/                框架：host.js（注册表+RPC+启停记忆+并行自举）+ client.js（抽屉壳+tb- 设计系统）
+  toolbox/                框架：host.js（注册表+RPC+启停记忆+并行自举+重启确定性重挂）+ client.js（抽屉壳+tb- 设计系统+面板自动刷新）
   theme-teal/             主题：client.js（payload 由它内联生成）
   theme-amber/            主题：client.js（暖橙；与青绿互斥按需激活）
   aiassist/               AI 助手 7 合一（tool.js，PRESETS 表：问答/翻译/优化/评审/提交信息/摘要/对比，共享 makeLlmHelper）
   calc/                   计算台 5 合一（tool.js，子模式：编解码/正则/Cron/文本对比/生成器）
+  flow/                   实时流程图（tool.js，主干箭头 + 子代理 git 树分支 + 平行调用右分支；data-autorefresh 驱动 2s 静默轮询）
+  quota/                  API 配额查询（tool.js，Kimi for Coding 余量：周额度/滑动窗口/并发；Node 子进程 https）
   jira/ git/ files/ trace/ http/ ports/                     各含 tool.js
   usage/ prompt/ context/ tools/ search/ lineage/           会话透视类，各含 tool.js
   aiusage/                        AI 旁路调用台账（tool.js，读 makeLlmHelper 落的 toolbox-ai-usage.json）
@@ -37,11 +39,11 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 | 顺序 | 插件 | 平台 | 批准 | 自动启用 |
 | --- | --- | --- | --- | --- |
 | 1 | toolbox | Host+Client | ✅ WebUI 批一次 | 是 |
-| 2-4 | jira / git / files | Host-only | 免批 | 是 |
-| 5、27 | theme-teal / theme-amber | Client-only | ✅ 批一次 | **否**（按需手动激活，互斥） |
-| 6-13 | trace / http / ports / calc / usage / prompt / context / aiassist | Host-only | 免批 | 是 |
-| 15-17 | tools / search / lineage | Host-only | 免批 | 是 |
-| 24 | aiusage | Host-only | 免批 | 是 |
+| 2-5 | jira / git / files / flow | Host-only | 免批 | 是 |
+| 6、7 | theme-teal / theme-amber | Client-only | ✅ 批一次 | **否**（按需手动激活，互斥） |
+| 8-13 | trace / http / ports / calc / usage / prompt | Host-only | 免批 | 是 |
+| 14-17 | context / aiassist / tools / search | Host-only | 免批 | 是 |
+| 18、24、25 | lineage / aiusage / quota | Host-only | 免批 | 是 |
 | 29 | selfview（界面自查） | Host+Client | ✅ 批一次 | **自动发起**（autoStart 条目重建时 runner.run 非阻塞发起 → 批准卡自动弹出，点一次允许即启动；授权不跨进程，Client 半插件每进程至少批一次是安全闸门） |
 
 最终启动集合 = 上表默认 **∩** `.dsh-dynamic-toolbox/toolbox-plugins.json` 启停记忆（记录为关的不启动）。

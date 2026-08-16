@@ -210,19 +210,36 @@ return {
       '</div></div>'
     }
 
+    // 完整详情（点击卡片展开）：完整输入参数（美化 JSON）+ 完整返回结果
+    const detailBlock = (c) => {
+      let input = c.argsRaw || ''
+      try { input = JSON.stringify(JSON.parse(c.argsRaw || '{}'), null, 2) } catch (e) {}
+      const out = c.status === 'pending' ? '（进行中，尚无返回）' : (c.resultText || '（空返回）')
+      const cap = 8000
+      const outShown = out.length > cap ? out.slice(0, cap) + '\n…（截断，共 ' + out.length + ' 字符）' : out
+      return '<div class="fl-detail">' +
+        '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入</span><pre class="fl-pre">' + esc(input) + '</pre></div>' +
+        '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
+      '</div>'
+    }
+
     // 平行调用组：同一 step 的多个普通工具调用，从主干向右各分一条支线（├▶），末条 ╰▶ 合并回主干；
-    // 卡片自适应宽度（不占满），入/出两行展示 传入参数 → 返回结果 的进出关系
-    const renderPar = (node) => {
+    // 卡片自适应宽度（不占满），入/出两行展示 传入参数 → 返回结果 的进出关系；点击卡片展开完整详情
+    const renderPar = (node, expandedSeq) => {
       const n = node.calls.length
       const rows = node.calls.map((c, i) => {
         const km = KIND_META[c.cat] || KIND_META.builtin
         const glyph = n === 1 ? '├▶' : (i === n - 1 ? '╰▶' : '├▶')
+        const isExp = expandedSeq === c.seq
         return '<div class="fl-par-row">' +
           '<span class="fl-git">' + glyph + '</span>' +
-          '<div class="fl-card" style="border-color:' + km.color + '44">' +
-            '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
-            '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
-            ioRows(c) +
+          '<div style="display:flex;flex-direction:column;gap:2px;max-width:460px">' +
+            '<div class="fl-card' + (isExp ? ' fl-card-on' : '') + '" style="border-color:' + km.color + '44;cursor:pointer" data-action="fdetail" data-seq="' + c.seq + '" title="点击展开完整传入/返回">' +
+              '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
+              '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
+              ioRows(c) +
+            '</div>' +
+            (isExp ? detailBlock(c) : '') +
           '</div>' +
         '</div>'
       })
@@ -294,7 +311,7 @@ return {
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">主干自上而下：用户/助手/工具组（平行卡片=同步调用）；子代理以 git 树分支展开其实时步骤</div>')
+      parts.push('<div class="tb-note">主干自上而下：用户/助手/工具组（向右分支=同步调用）；子代理以 git 树分支展开实时步骤；点卡片看完整传入/返回</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
@@ -304,7 +321,7 @@ return {
         const rows = []
         for (const n of shown) {
           if (n.t === 'msg') rows.push(renderMsg(n.it))
-          else if (n.t === 'par') rows.push(renderPar(n))
+          else if (n.t === 'par') rows.push(renderPar(n, st.expanded))
           else rows.push(await renderSub(n))
           rows.push(ARROW)
         }
@@ -318,8 +335,14 @@ return {
 
     const handler = async ({ action, fields, state, session }) => {
       if (!sq) return { ok: false, error: 'sessionQuery 服务不可用', html: '' }
-      const st = (state && typeof state === 'object' && state) ? state : { live: true, sid: null }
+      const st = (state && typeof state === 'object' && state) ? state : { live: true, sid: null, expanded: null }
+      if (typeof st.expanded !== 'number' && st.expanded != null) st.expanded = null
+      const el = fields && fields.__el ? fields.__el : {}
       if (action === 'toggle-live') st.live = !st.live
+      else if (action === 'fdetail' && el.seq != null) {
+        const seq = Number(el.seq)
+        st.expanded = st.expanded === seq ? null : seq
+      }
       const sid = session || st.sid
       if (!sid) return { ok: true, html: '<div class="jr-tabpanel tb-root"><div class="tb-notice">未找到当前会话</div></div>', state: st }
       st.sid = sid

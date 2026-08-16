@@ -262,6 +262,12 @@ return {
       '.fl-out .fl-io-tag{background:rgba(102,187,106,.14);color:var(--tb-done-text,#81c784)}',
       '.fl-out-err{color:var(--tb-danger-text,#f28b82)}',
       '.fl-out-err .fl-io-tag{background:rgba(239,83,80,.14);color:var(--tb-danger-text,#f28b82)}',
+      // 卡片点击展开的完整详情（入=完整传入 JSON / 出=完整返回文本）
+      '.fl-card-on{border-color:var(--tb-accent-border,rgba(91,141,239,.6))!important;background:var(--tb-accent-bg,rgba(91,141,239,.08))!important}',
+      '.fl-detail{display:flex;flex-direction:column;gap:6px;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:8px;padding:8px;background:var(--tb-input-bg,var(--dsw-alias-bg-layer-1,#26272e));max-width:460px}',
+      '.fl-sec{display:flex;flex-direction:column;gap:3px}',
+      '.fl-sec-label{font-size:10px;font-weight:600;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));letter-spacing:.4px}',
+      '.fl-pre{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;line-height:1.5;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:6px;padding:6px 8px;max-height:220px;overflow:auto;margin:0;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4))}',
       '.fl-spin{flex:none;display:inline-block;width:10px;height:10px;border:1.5px solid var(--tb-accent-border,rgba(91,141,239,.35));border-top-color:var(--tb-accent,#3f6fd9);border-radius:50%;animation:tbSpin .7s linear infinite}',
       '.fl-git{flex:none;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));width:22px;text-align:center;user-select:none}',
       '.fl-git-branch{color:var(--tb-accent-text,#7fa7f0);margin-right:4px}',

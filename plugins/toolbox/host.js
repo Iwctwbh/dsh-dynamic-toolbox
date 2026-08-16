@@ -287,16 +287,33 @@ return {
     const findManifest = async () => {
       const fs = ctx.get('fs')
       if (!fs) return null
-      // 根探测与桩一致：sandboxPolicy.workspaceRoot + 各会话 cwd
+      // 根探测与桩一致：直下命中优先，否则扫一级子目录（仓库 clone 为别的项目的子目录场景）
       const roots = []
       const sp = ctx.get('sandboxPolicy')
       if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)
       const ss = ctx.get('sessions')
       if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }
+      const readManifest = async (dir) => {
+        try {
+          const t = await fs.resolve('plugins.json', { cwd: dir })
+          if (await fs.stat(t)) return { manifest: JSON.parse(await fs.readText(t)), root: dir.replace(/[\\/]+$/, '') }
+        } catch (e) {}
+        return null
+      }
+      for (const root of roots) {
+        const hit = await readManifest(root)
+        if (hit) return hit
+      }
       for (const root of roots) {
         try {
-          const t = await fs.resolve('plugins.json', { cwd: root })
-          if (await fs.stat(t)) return { manifest: JSON.parse(await fs.readText(t)), root }
+          const dt = await fs.resolve('.', { cwd: root })
+          const entries = await fs.listDir(dt)
+          for (const ent of entries || []) {
+            if (!ent || ent.type !== 'directory' || !ent.name) continue
+            if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
+            const hit = await readManifest(root.replace(/[\\/]+$/, '') + '/' + ent.name)
+            if (hit) return hit
+          }
         } catch (e) {}
       }
       return null
@@ -432,15 +449,25 @@ return {
           const ss = ctx.get('sessions')
           if (ss) { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } }
         } catch (e) {}
-        // 优先含 plugins.json 的根
+        // 优先含 plugins.json 的根（直下命中优先，否则一级子目录——clone 为子目录场景报告落本仓库）
         let root = roots[0]
         try {
           const fs = ctx.get('fs')
           if (fs) {
+            outer:
             for (const r of roots) {
               try {
                 const t = await fs.resolve('plugins.json', { cwd: r })
                 if (await fs.stat(t)) { root = r; break }
+                const dt = await fs.resolve('.', { cwd: r })
+                const entries = await fs.listDir(dt)
+                for (const ent of entries || []) {
+                  if (!ent || ent.type !== 'directory' || !ent.name) continue
+                  if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
+                  const sub = r.replace(/[\\/]+$/, '') + '/' + ent.name
+                  const t2 = await fs.resolve('plugins.json', { cwd: sub })
+                  if (await fs.stat(t2)) { root = sub; break outer }
+                }
               } catch (e) {}
             }
           }

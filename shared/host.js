@@ -135,9 +135,69 @@ const makeSessionLogReader = (ctx, sq) => {
   }
 }
 
-// ===== 工作区记录持久化（<工作区>/.dsh-dynamic-toolbox/<file>，纯 JSON）=====
-// 约定：凡持有「记录/历史」的工具一律落盘工作区，面板 state 只做镜像。
-// 写策略：有会话按会话 resolve（cwd 即可写边界）；无会话显式 workspace-write@wsRoot ——
+// ===== 仓库根发现（clone 部署关键）：工具箱数据/产物一律归属「本仓库根」，而非会话 cwd =====
+// 场景：本仓库被 clone 到别的项目根目录下当子目录（如 D:\\other\\dsh-dynamic-toolbox\\），
+// DSH 在宿主项目根运行——会话 cwd / workspaceRoot 都是宿主项目，若按会话 cwd 落盘会污染宿主。
+// 这里先直下找 plugins.json，找不到再扫一级子目录（plugins.json 在子目录里即为本仓库）。
+// 数据目录名由仓库根的 toolbox.config.json 配置（dataDir，默认 .dsh-dynamic-toolbox）。
+let _repoCache = null // 进程内缓存（仓库位置运行期不变）
+const findRepoRoot = async (ctx) => {
+  if (_repoCache) return _repoCache
+  const fsService = ctx.get('fs')
+  if (!fsService) return null
+  const roots = []
+  const sp = ctx.get('sandboxPolicy')
+  if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)
+  const ss = ctx.get('sessions')
+  if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }
+  const hasManifest = async (dir) => {
+    try {
+      const t = await fsService.resolve('plugins.json', { cwd: dir })
+      return await fsService.stat(t) ? dir.replace(/[\\/]+$/, '') : null
+    } catch (e) { return null }
+  }
+  for (const root of roots) {
+    const hit = await hasManifest(root)
+    if (hit) { _repoCache = hit; return hit }
+  }
+  for (const root of roots) {
+    try {
+      const dt = await fsService.resolve('.', { cwd: root })
+      const entries = await fsService.listDir(dt)
+      for (const ent of entries || []) {
+        if (!ent || ent.type !== 'directory' || !ent.name) continue
+        if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
+        const sub = root.replace(/[\\/]+$/, '') + '/' + ent.name
+        const hit = await hasManifest(sub)
+        if (hit) { _repoCache = hit; return hit }
+      }
+    } catch (e) {}
+  }
+  return null
+}
+// 数据目录名：读仓库根 toolbox.config.json 的 dataDir（默认 .dsh-dynamic-toolbox）
+let _dataDirCache = null
+const repoDataDir = async (ctx) => {
+  if (_dataDirCache) return _dataDirCache
+  let dir = '.dsh-dynamic-toolbox'
+  const fsService = ctx.get('fs')
+  const repoRoot = await findRepoRoot(ctx)
+  if (fsService && repoRoot) {
+    try {
+      const cf = await fsService.resolve('toolbox.config.json', { cwd: repoRoot })
+      if (await fsService.stat(cf)) {
+        const cfg = JSON.parse(await fsService.readText(cf))
+        if (cfg && typeof cfg.dataDir === 'string' && /^[A-Za-z0-9._-]+$/.test(cfg.dataDir)) dir = cfg.dataDir
+      }
+    } catch (e) {}
+  }
+  _dataDirCache = dir
+  return dir
+}
+
+// ===== 工作区记录持久化（<仓库根>/<dataDir>/<file>，纯 JSON）=====
+// 约定：凡持有「记录/历史」的工具一律落盘仓库根（clone 部署时也不污染宿主项目），面板 state 只做镜像。
+// 写策略：有会话按会话 resolve（cwd 即可写边界）；无会话显式 workspace-write@仓库根 ——
 // 绝不回落部署默认策略（其可写根是宿主进程 cwd，写工作区会被 FS_SANDBOX_DENIED 拒绝）。
 const storePolicy = (ctx, wsRoot, session) => {
   const sp = ctx.get('sandboxPolicy')
@@ -149,7 +209,7 @@ const ensureStoreDir = async (ctx, wsRoot) => {
   if (!subprocess || !wsRoot) return
   try {
     const handle = subprocess.spawn({
-      argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", '.dsh-dynamic-toolbox'],
+      argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", await repoDataDir(ctx)],
       cwd: wsRoot,
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
       graceMs: 15000,
@@ -157,11 +217,23 @@ const ensureStoreDir = async (ctx, wsRoot) => {
     await handle.done
   } catch (e) {}
 }
+// 数据落盘根：优先仓库根（findRepoRoot），其次调用方给的 wsRoot（向后兼容/兜底）
+const storeBase = async (ctx, wsRoot) => {
+  const repo = await findRepoRoot(ctx)
+  return repo || wsRoot
+}
+// 数据目录名映射：rel 里的 .dsh-dynamic-toolbox 前缀换成配置的 dataDir（支持自定义目录名）
+const mapDataRel = async (ctx, rel) => {
+  const dir = await repoDataDir(ctx)
+  if (dir === '.dsh-dynamic-toolbox') return rel
+  return String(rel).replace(/^\.dsh-dynamic-toolbox/, dir)
+}
 const readJsonStore = async (ctx, rel, wsRoot, fallback) => {
   const fsService = ctx.get('fs')
-  if (!fsService || !wsRoot) return fallback
+  const base = await storeBase(ctx, wsRoot)
+  if (!fsService || !base) return fallback
   try {
-    const target = await fsService.resolve(rel, { cwd: wsRoot })
+    const target = await fsService.resolve(await mapDataRel(ctx, rel), { cwd: base })
     if (!await fsService.stat(target)) return fallback
     const parsed = JSON.parse(await fsService.readText(target))
     return parsed == null ? fallback : parsed
@@ -169,11 +241,12 @@ const readJsonStore = async (ctx, rel, wsRoot, fallback) => {
 }
 const writeJsonStore = async (ctx, rel, data, wsRoot, session) => {
   const fsService = ctx.get('fs')
-  if (!fsService || !wsRoot) return false
+  const base = await storeBase(ctx, wsRoot)
+  if (!fsService || !base) return false
   try {
-    await ensureStoreDir(ctx, wsRoot)
-    const target = await fsService.resolve(rel, { cwd: wsRoot })
-    await fsService.writeText(target, JSON.stringify(data, null, 2), undefined, undefined, storePolicy(ctx, wsRoot, session))
+    await ensureStoreDir(ctx, base)
+    const target = await fsService.resolve(await mapDataRel(ctx, rel), { cwd: base })
+    await fsService.writeText(target, JSON.stringify(data, null, 2), undefined, undefined, storePolicy(ctx, base, session))
     return true
   } catch (e) {
     console.error('store 持久化失败 (' + rel + '):', String((e && e.message) || e))
@@ -319,29 +392,37 @@ const makeLlmHelper = (ctx) => {
   return { available: Boolean(llm), listProviders, listModels, resolveRoute, chat, rollup, routeRow }
 }
 
-// ===== 内容产物目录约定：<工作区>/.dsh-dynamic-toolbox/data/<插件key>/ =====
-// 与 .dsh-dynamic-toolbox（工具内部 JSON 状态）分家：这里放人会直接打开的内容产物（Jira 附件、导出件等）。
-// 点号目录与 .dsh-dynamic-toolbox/.git 同族、不污染根目录观感；所有插件产物收一处，.gitignore 只需一行 .dsh-dynamic-toolbox/data/。
+// ===== 内容产物目录约定：<仓库根>/<dataDir>/data/<插件key>/ =====
+// 与 <dataDir>（工具内部 JSON 状态）分家：这里放人会直接打开的内容产物（Jira 附件、导出件等）。
+// 点号目录与仓库 .git 同族、不污染根目录观感；所有插件产物收一处，.gitignore 只需一行 <dataDir>/data/。
+// 注：目录名随 toolbox.config.json 的 dataDir；调用方用 resolveDataPath(ctx, rel, wsRoot) 解析绝对路径。
 const TOOLBOX_DATA_DIR = '.dsh-dynamic-toolbox/data'
 const pluginDataDir = (key) => TOOLBOX_DATA_DIR + '/' + key
+// 数据/产物相对路径 → 绝对路径：走仓库根 + 配置的 dataDir（clone 部署归属本仓库，不污染宿主）
+const resolveDataPath = async (ctx, rel, wsRoot) => {
+  const fsService = ctx.get('fs')
+  const base = await storeBase(ctx, wsRoot)
+  if (!fsService || !base) return null
+  return fsService.resolve(await mapDataRel(ctx, rel), { cwd: base })
+}
+// 同上的纯字符串绝对路径版（供子进程 argv/env 使用，它们拿不到 FsTarget）
+const dataPathAbs = async (ctx, rel, wsRoot) => {
+  const base = await storeBase(ctx, wsRoot)
+  if (!base) return ''
+  return base.replace(/[\\/]+$/, '') + '/' + (await mapDataRel(ctx, rel))
+}
 
-// ===== 清单查找（plugins.json，仓库根 = 工作区根）：根探测与桩一致 =====
-// （sandboxPolicy.workspaceRoot + 各会话 cwd）。返回 { manifest, root } 或 null。
-// 供需要读清单元数据的工具用（如轨迹工具按条目 modelTools 把插件注册的模型工具归「插件」——
-// 沙箱的 ctx.tools.get 被刻意降级为 schema 视图、拿不到动态标记，清单是唯一事实源）。
+// ===== 清单查找（plugins.json，仓库根）：根探测与桩一致（直下 + 一级子目录扫描）=====
+// 返回 { manifest, root } 或 null。供需要读清单元数据的工具用（如轨迹工具按条目 modelTools
+// 把插件注册的模型工具归「插件」——沙箱内 ctx.tools.get 被刻意降级为 schema 视图，清单是事实源）。
 const findManifest = async (ctx) => {
   const fs = ctx.get('fs')
   if (!fs) return null
-  const roots = []
-  const sp = ctx.get('sandboxPolicy')
-  if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)
-  const ss = ctx.get('sessions')
-  if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }
-  for (const root of roots) {
-    try {
-      const t = await fs.resolve('plugins.json', { cwd: root })
-      if (await fs.stat(t)) return { manifest: JSON.parse(await fs.readText(t)), root }
-    } catch (e) {}
-  }
+  const root = await findRepoRoot(ctx)
+  if (!root) return null
+  try {
+    const t = await fs.resolve('plugins.json', { cwd: root })
+    if (await fs.stat(t)) return { manifest: JSON.parse(await fs.readText(t)), root }
+  } catch (e) {}
   return null
 }

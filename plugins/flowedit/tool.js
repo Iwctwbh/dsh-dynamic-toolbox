@@ -15,12 +15,20 @@ return {
     const subprocess = ctx.get('subprocess')
     const REL_DIR = pluginDataDir('flows') // .dsh-dynamic-toolbox/data/flows
 
-    // ---- 目录/读写 ----
+    // ---- 目录/读写（走仓库根 resolveDataPath：clone 部署时数据归属本仓库，不污染宿主项目）----
+    // 返回 flows 目录的绝对路径字符串（供 fs cwd 与子进程 argv 共用）
+    const flowsDirAbs = async (wsRoot) => {
+      if (!fs) return null
+      const t = await resolveDataPath(ctx, REL_DIR, wsRoot)
+      return t ? fs.processPath(t) : null
+    }
     const ensureDir = async (wsRoot) => {
-      if (!subprocess || !wsRoot) return
+      if (!subprocess) return
       try {
+        const abs = await flowsDirAbs(wsRoot)
+        if (!abs) return
         const handle = subprocess.spawn({
-          argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", REL_DIR],
+          argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", abs],
           cwd: wsRoot,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
           graceMs: 15000,
@@ -29,9 +37,11 @@ return {
       } catch (e) {}
     }
     const listFlows = async (wsRoot) => {
-      if (!fs || !wsRoot) return []
+      if (!fs) return []
       try {
-        const dir = await fs.resolve(REL_DIR, { cwd: wsRoot })
+        const abs = await flowsDirAbs(wsRoot)
+        if (!abs) return []
+        const dir = await fs.resolve(abs)
         if (!await fs.stat(dir)) return []
         const entries = await fs.listDir(dir)
         return (entries || [])
@@ -43,20 +53,25 @@ return {
       } catch (e) { return [] }
     }
     const readFlow = async (wsRoot, name) => {
-      const t = await fs.resolve(REL_DIR + '/' + name + '.md', { cwd: wsRoot })
+      const abs = await flowsDirAbs(wsRoot)
+      if (!abs) return null
+      const t = await fs.resolve(name + '.md', { cwd: abs })
       if (!await fs.stat(t)) return null
       return fs.readText(t)
     }
     const saveFlow = async (wsRoot, session, name, content) => {
       await ensureDir(wsRoot)
-      const t = await fs.resolve(REL_DIR + '/' + name + '.md', { cwd: wsRoot })
+      const abs = await flowsDirAbs(wsRoot)
+      const t = await fs.resolve(name + '.md', { cwd: abs })
       await fs.writeText(t, content, undefined, undefined, storePolicy(ctx, wsRoot, session))
       return true
     }
     const deleteFlow = async (wsRoot, name) => {
       if (!subprocess || !fs) return false
       try {
-        const t = await fs.resolve(REL_DIR + '/' + name + '.md', { cwd: wsRoot })
+        const dirAbs = await flowsDirAbs(wsRoot)
+        if (!dirAbs) return false
+        const t = await fs.resolve(name + '.md', { cwd: dirAbs })
         const abs = typeof fs.processPath === 'function' ? fs.processPath(t) : t
         const handle = subprocess.spawn({
           argv: ['node', '-e', "require('fs').rmSync(process.argv[1], { force: true })", abs],

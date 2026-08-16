@@ -140,11 +140,38 @@ return {
     const ss = ctx.get('sessions')
     if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }
     const tried = []
-    for (const root of roots) {
+    // 根解析：直下命中 loader.js 优先；否则扫一级子目录（本仓库 clone 为别的项目的子目录场景，
+    // 此时 workspaceRoot 是宿主项目根，loader.js 在 <宿主根>/<本仓库子目录>/ 下）
+    const hit = await (async () => {
+      for (const root of roots) {
+        try {
+          const t = await fs.resolve(${JSON.stringify(ROOT_PREFIX)} + 'loader.js', { cwd: root })
+          if (await fs.stat(t)) return { t, root }
+          tried.push(root + ': loader.js 不存在')
+        } catch (e) { tried.push(root + ': ' + String((e && e.message) || e)) }
+      }
+      for (const root of roots) {
+        try {
+          const dt = await fs.resolve('.', { cwd: root })
+          const entries = await fs.listDir(dt)
+          for (const ent of entries || []) {
+            if (!ent || ent.type !== 'directory' || !ent.name) continue
+            if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
+            try {
+              const sub = root.replace(/[\\\\/]+$/, '') + '/' + ent.name
+              const t = await fs.resolve(${JSON.stringify(ROOT_PREFIX)} + 'loader.js', { cwd: sub })
+              if (await fs.stat(t)) return { t, root: sub }
+            } catch (e2) {}
+          }
+          tried.push(root + ': 一级子目录未见 loader.js')
+        } catch (e) { tried.push(root + ' 扫描: ' + String((e && e.message) || e)) }
+      }
+      return null
+    })()
+    if (hit) {
+      const root = hit.root
       try {
-        const t = await fs.resolve(${JSON.stringify(ROOT_PREFIX)} + 'loader.js', { cwd: root })
-        if (!await fs.stat(t)) { tried.push(root + ': loader.js 不存在'); continue }
-        const fn = new Function('ctx', 'harness', 'console', 'IMPL_FILES', 'usedRoot', 'return (async () => {\\n' + await fs.readText(t) + '\\n})()')
+        const fn = new Function('ctx', 'harness', 'console', 'IMPL_FILES', 'usedRoot', 'return (async () => {\\n' + await fs.readText(hit.t) + '\\n})()')
         return await fn(ctx, typeof harness === 'undefined' ? undefined : harness, console, TOOL_FILES, root)
       } catch (e) { tried.push(root + ': ' + String((e && e.message) || e)) }
     }

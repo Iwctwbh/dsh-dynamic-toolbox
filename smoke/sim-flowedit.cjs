@@ -9,7 +9,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8')
 // 内存文件系统：key = 绝对路径
 const mem = {}
 const fsSvc = {
-  async resolve(rel, opts) { return (opts && opts.cwd ? opts.cwd : ROOT) + '/' + rel },
+  async resolve(rel, opts) { if (/^[A-Za-z]:[\\/]|^\//.test(rel)) return rel; return (opts && opts.cwd ? opts.cwd : ROOT) + '/' + rel },
   processPath(t) { return t },
   async stat(t) {
     if (Object.prototype.hasOwnProperty.call(mem, t)) return { isDir: false }

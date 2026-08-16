@@ -99,11 +99,13 @@ return {
 
     // ---- 截图落盘（stdin 批写二进制） ----
     const saveJpg = async (b64) => {
-      // 根目录与全工具箱一致走 findManifest（含 plugins.json 的根）；sandboxPolicy.workspaceRoot 实测可能给到盘符根
+      // 根目录与全工具箱一致走 findManifest（含 plugins.json 的仓库根，含一级子目录扫描）；
+      // 数据目录名随 toolbox.config.json 的 dataDir；clone 部署时截图落本仓库，不污染宿主项目
       const found = await findManifest(ctx)
       const ws = found ? { root: found.root } : resolveWorkspace(ctx, null, null)
       if (!ws.root) return { ok: false, error: '无法确定工作区根目录' }
-      const file = ws.root + '/.dsh-dynamic-toolbox/toolbox-selfview/shot-' + Date.now() + '.jpg'
+      const dataDir = await repoDataDir(ctx)
+      const file = ws.root + '/' + dataDir + '/toolbox-selfview/shot-' + Date.now() + '.jpg'
       const sub = ctx.get('subprocess')
       if (!sub) return { ok: false, error: 'subprocess 服务不可用' }
       try {

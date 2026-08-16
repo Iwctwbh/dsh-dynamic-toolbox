@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "comment": "工具箱仓库级配置。dataDir：数据/产物目录名（相对本仓库根，默认 .dsh-dynamic-toolbox）。本仓库被 clone 到别的项目当子目录时，所有数据仍落本目录——不污染宿主项目根。改它后重启工具插件生效。",
+  "dataDir": ".dsh-dynamic-toolbox"
+}

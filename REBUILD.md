@@ -60,9 +60,10 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 
 ## 数据与凭据
 
-- 数据（重建不丢，均在 `<工作区>/.dsh-dynamic-toolbox/`）：`jira-watch.json`（Jira 查询记录）、`toolbox-http.json`（HTTP 历史）、`toolbox-ask.json`（问答历史）、`toolbox-compare.json`（对比记录）、`toolbox-translate.json` / `toolbox-promptopt.json` / `toolbox-commitmsg.json` / `toolbox-review.json` / `toolbox-aisummary.json`（AI 工具记录）、`toolbox-plugins.json`（**启停记忆配置**：重建时默认恢复上次开关状态）
-- 内容产物（重建不丢，`<工作区>/.dsh-dynamic-toolbox/data/<插件key>/`，共享约定 `pluginDataDir(key)`）：`jira/<KEY>/`（Jira 归档：issue.md + issue.json + 附件；查询即自动归档、点记录零 API 读本地）——与 .dsh-dynamic-toolbox 的内部 JSON 状态分家，.gitignore 只需一行 `.dsh-dynamic-toolbox/data/`
-- 自动补齐报告：框架每次启动自调一次 doRebuild，分阶段结果落盘 `<工作区>/.dsh-dynamic-toolbox/toolbox-autorebuild.json`（subprocess 直写，绕过 fs 沙箱策略；文件停在哪一阶段，问题就在哪阶段之后）
+- **存储归属仓库根（clone 部署安全）**：所有数据/产物落「仓库根/`toolbox.config.json` 的 `dataDir`（默认 `.dsh-dynamic-toolbox`）」，**不再跟随会话 cwd**。本仓库 clone 到别的项目当子目录时，桩/findManifest/store 先直下再找一级子目录定位本仓库（`plugins.json` 为标记），数据仍落本仓库、不污染宿主项目根；多会话 cwd 不同也不再散数据。改 `dataDir` 可整体换目录名（重启工具生效）。
+- 数据（重建不丢，均在 `<仓库根>/<dataDir>/`）：`jira-watch.json`（Jira 查询记录）、`toolbox-http.json`（HTTP 历史）、`toolbox-search.json`（搜索历史）、`toolbox-plugins.json`（**启停记忆配置**：重建时默认恢复上次开关状态）、各 AI preset 历史 `toolbox-{ask,translate,promptopt,review,commitmsg,aisummary,compare}.json`
+- 内容产物（重建不丢，`<仓库根>/<dataDir>/data/<插件key>/`，共享约定 `pluginDataDir(key)` + `resolveDataPath`/`dataPathAbs` 解析）：`jira/<KEY>/`（Jira 归档：issue.md + issue.json + 附件；查询即自动归档、点记录零 API 读本地）、`flows/<name>.md`（工作流文档）——与内部 JSON 状态分家，.gitignore 只需一行 `<dataDir>/data/`
+- 自动补齐报告：框架每次启动自调一次 doRebuild，分阶段结果落盘 `<仓库根>/<dataDir>/toolbox-autorebuild.json`（subprocess 直写，绕过 fs 沙箱策略；文件停在哪一阶段，问题就在哪阶段之后）
 - 插件启停：抽屉右上角齿轮进管理视图，开关直连 `dynamicCordisRunner` 服务真停/真启（与 Cordis 面板同一注册表、状态同步；含 Client 半的插件仍需到 Cordis 面板操作）
-- 约定：含记录/历史的工具必须落盘工作区（共享助手 `readJsonStore`/`writeJsonStore` 见 `shared/host.js`），面板 state 只是镜像；持久化失败要在面板出警告，不许静默
+- 约定：含记录/历史的工具必须落盘仓库根（共享助手 `readJsonStore`/`writeJsonStore`/`resolveDataPath`/`dataPathAbs` 见 `shared/host.js`——内部经 `findRepoRoot` 定位仓库、`repoDataDir` 读 `toolbox.config.json` 的 dataDir），面板 state 只是镜像；持久化失败要在面板出警告，不许静默
 - Jira 凭据四选一（推荐第一种）：**Jira 面板「凭据设置」直接填写**（写入 Harness 凭据存储，与设置里的 API Key 同机制同存储，describe 只显状态不泄密，立即生效）；环境变量 `JIRA_BASE_URL`/`JIRA_EMAIL`/`JIRA_TOKEN`；`~/.dsh/.credentials.yaml`；项目 `.env`

@@ -313,8 +313,9 @@ return {
       const p = (async () => {
         if (!subprocess) return
         try {
+          const abs = await dataPathAbs(ctx, '.dsh-dynamic-toolbox', wsRoot) // 仓库根的数据目录（随配置的 dataDir）
           const handle = subprocess.spawn({
-            argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", REL_DATA_DIR],
+            argv: ['node', '-e', "require('fs').mkdirSync(process.argv[1], { recursive: true })", abs],
             cwd: wsRoot,
             stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
             graceMs: 30000,
@@ -329,7 +330,8 @@ return {
     const readJsonFile = async (rel, wsRoot) => {
       if (!fsService) return []
       try {
-        const target = await fsService.resolve(rel, { cwd: wsRoot })
+        const target = await resolveDataPath(ctx, rel, wsRoot)
+        if (!target) return []
         const info = await fsService.stat(target)
         if (!info) return []
         const parsed = JSON.parse(await fsService.readText(target))
@@ -340,11 +342,13 @@ return {
       if (!fsService) return false
       try {
         await ensureDataDir(ws.root)
-        const target = await fsService.resolve(rel, { cwd: ws.root })
-        // 有会话 → 按会话策略（cwd 即工作区边界）；无会话 → 显式以工具工作区为可写根
-        // （缺省会回落到部署默认策略，其 root 是宿主进程 cwd，写不进 D:\prompt 会被 FS_SANDBOX_DENIED 静默吞掉）
+        const target = await resolveDataPath(ctx, rel, ws.root)
+        if (!target) return false
+        // 有会话 → 按会话策略（cwd 即工作区边界）；无会话 → 显式以仓库根为可写根
+        // （缺省会回落到部署默认策略，其 root 是宿主进程 cwd，写不进仓库会被 FS_SANDBOX_DENIED 静默吞掉）
         const sp = ctx.get('sandboxPolicy')
-        const policy = sp && ws.session ? sp.resolve({ session: ws.session }) : { mode: 'workspace-write', workspaceRoot: ws.root }
+        const base = await storeBase(ctx, ws.root)
+        const policy = sp && ws.session ? sp.resolve({ session: ws.session }) : { mode: 'workspace-write', workspaceRoot: base }
         await fsService.writeText(target, JSON.stringify(data, null, 2), undefined, undefined, policy)
         return true
       } catch (e) {
@@ -405,7 +409,7 @@ return {
       env.JIRA_ATTACH_URL = url
       env.JIRA_ISSUE_KEY = key
       env.JIRA_ATTACH_NAME = filename
-      env.JIRA_ARCHIVE_ROOT = REL_ARCHIVE_DIR
+      env.JIRA_ARCHIVE_ROOT = await dataPathAbs(ctx, pluginDataDir('jira'), ws.root) // 绝对路径：归档落仓库根
       const res = await runNode(ATTACH_SCRIPT, env, ws.root)
       if (!res.ok) return res
       let path = ''
@@ -428,8 +432,8 @@ return {
       const inRel = '.dsh-dynamic-toolbox\\jira-issue-in.json'
       if (!await writeJsonFile(inRel, issue, ws)) return { ok: false, error: '临时文件写入失败' }
       const env = await baseEnv()
-      env.JIRA_ISSUE_FILE = inRel
-      env.JIRA_ARCHIVE_ROOT = REL_ARCHIVE_DIR
+      env.JIRA_ISSUE_FILE = await dataPathAbs(ctx, inRel, ws.root)
+      env.JIRA_ARCHIVE_ROOT = await dataPathAbs(ctx, pluginDataDir('jira'), ws.root) // 绝对路径：归档落仓库根
       const res = await runNode(ARCHIVE_SCRIPT, env, ws.root)
       if (!res.ok) return { ok: false, error: res.error }
       try { return JSON.parse(res.stdout) } catch (e) { return { ok: false, error: '归档结果解析失败' } }
@@ -438,8 +442,8 @@ return {
     const loadArchive = async (key, ws) => {
       if (!fsService) return null
       try {
-        const target = await fsService.resolve(REL_ARCHIVE_DIR + '/' + key + '/issue.json', { cwd: ws.root })
-        if (!await fsService.stat(target)) return null
+        const target = await resolveDataPath(ctx, pluginDataDir('jira') + '/' + key + '/issue.json', ws.root)
+        if (!target || !await fsService.stat(target)) return null
         const data = JSON.parse(await fsService.readText(target))
         if (!data || typeof data !== 'object' || !data.key) return null
         return data
@@ -456,7 +460,7 @@ return {
     }
     // 本地附件预览（base64，≤5MB；LOCAL_B64_SCRIPT 限定 Jira-Issue/ 内）
     const previewLocalFile = async (relPath, ws) => {
-      const res = await runNode(LOCAL_B64_SCRIPT, { JIRA_ARCHIVE_ROOT: REL_ARCHIVE_DIR, JIRA_LOCAL_FILE: relPath }, ws.root)
+      const res = await runNode(LOCAL_B64_SCRIPT, { JIRA_ARCHIVE_ROOT: await dataPathAbs(ctx, pluginDataDir('jira'), ws.root), JIRA_LOCAL_FILE: relPath }, ws.root)
       if (!res.ok) return { ok: false, error: res.error }
       for (const line of res.stdout.split(/\r?\n/)) {
         if (line.indexOf('B64|') === 0) return { ok: true, data: line.slice(4) }

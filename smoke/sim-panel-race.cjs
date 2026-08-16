@@ -47,7 +47,7 @@ async function evalPlugin() {
   const f = new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')
   const plugin = await f(c, undefined, console)
   await plugin.apply(c)
-  return hs.ai
+  return hs.aiassist
 }
 
 // client loadPanel 等价物（guard 开关模拟修复前后）
@@ -84,13 +84,13 @@ const check = (label, cond, detail) => {
 async function race(useGuard) {
   const h = await evalPlugin() // 全新实例 = 冷 modelsCache
   const c = makeClient(h, useGuard)
-  await c.loadPanel('ai', '', {})
+  await c.loadPanel('aiassist', '', {})
   modelDelay = { deepseek: 0, moonshot: 120 } // moonshot 慢适配器
-  const p1 = c.loadPanel('ai', 'route', { provider: 'moonshot', model: 'deepseek-chat', q: '' }) // 先发后到
-  const p2 = c.loadPanel('ai', 'route', { provider: 'deepseek', model: 'deepseek-chat', q: '' }) // 后发先到
+  const p1 = c.loadPanel('aiassist', 'route', { provider: 'moonshot', model: 'deepseek-chat', q: '' }) // 先发后到
+  const p2 = c.loadPanel('aiassist', 'route', { provider: 'deepseek', model: 'deepseek-chat', q: '' }) // 后发先到
   await Promise.all([p1, p2])
   modelDelay = { deepseek: 0, moonshot: 0 }
-  return { ui: selectedOf(c.htmlRef.ai, 'provider').selected, state: (c.stateRef.ai || {}).provider }
+  return { ui: selectedOf(c.htmlRef.aiassist, 'provider').selected, state: (c.stateRef.aiassist || {}).provider }
 }
 
 ;(async () => {
@@ -105,11 +105,11 @@ async function race(useGuard) {
   // 串行联动回归（防护开启）
   const h = await evalPlugin()
   const c = makeClient(h, true)
-  let r = await c.loadPanel('ai', '', {})
+  let r = await c.loadPanel('aiassist', '', {})
   check('串行：打开默认会话路由', selectedOf(r.html, 'provider').selected === 'deepseek' && selectedOf(r.html, 'model').selected === 'deepseek-chat')
-  r = await c.loadPanel('ai', 'route', { provider: 'moonshot', model: 'deepseek-chat', q: '' })
+  r = await c.loadPanel('aiassist', 'route', { provider: 'moonshot', model: 'deepseek-chat', q: '' })
   check('串行：切换 provider 换模型列表', selectedOf(r.html, 'provider').selected === 'moonshot' && selectedOf(r.html, 'model').selected === 'kimi-k2')
-  r = await c.loadPanel('ai', 'send', { provider: 'moonshot', model: 'kimi-latest', q: 'hi' })
+  r = await c.loadPanel('aiassist', 'send', { provider: 'moonshot', model: 'kimi-latest', q: 'hi' })
   check('串行：按所选路由调用', ((r.state.history || [])[0] || {}).route === 'moonshot/kimi-latest')
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')

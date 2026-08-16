@@ -90,7 +90,7 @@ const check = (label, cond, detail) => {
   const src = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(ctx, undefined, console)
   await plugin.apply(ctx)
-  const h = handlers.ai
+  const h = handlers.aiassist
   if (!h) { console.log('FAIL | aiassist 未注册'); process.exit(1) }
 
   // ---- 打开：默认 preset ask，路由渲染，历史从磁盘读（空）----
@@ -139,7 +139,7 @@ const check = (label, cond, detail) => {
     const src2 = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
     const p2 = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src2 + '\n})()')(c2, undefined, console)
     await p2.apply(c2)
-    return hs.ai
+    return hs.aiassist
   })()
   let r2 = await h2({ action: '', fields: {}, state: null, root: ROOT, session: 's1' })
   // 打开默认是 ask，先切 compare
@@ -181,7 +181,7 @@ const check = (label, cond, detail) => {
   const srcNo = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
   const pNo = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + srcNo + '\n})()')(ctxNoLlm, undefined, console)
   await pNo.apply(ctxNoLlm)
-  const hN = hsN.ai
+  const hN = hsN.aiassist
   let rn = await hN({ action: '', fields: {}, state: null, root: ROOT, session: 's1' })
   check('llm 缺失 → 打开不崩', rn.ok === true)
   rn = await hN({ action: 'send', fields: { q: 'x' }, state: rn.state, root: ROOT, session: 's1' })

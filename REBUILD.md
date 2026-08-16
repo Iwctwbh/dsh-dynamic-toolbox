@@ -18,17 +18,17 @@ plugins/<key>/          每插件一个文件夹：plugin.json（元数据）+ p
   toolbox/                框架：host.js（注册表+RPC+启停记忆+并行自举）+ client.js（抽屉壳+tb- 设计系统）
   theme-teal/             主题：client.js（payload 由它内联生成）
   theme-amber/            主题：client.js（暖橙；与青绿互斥按需激活）
-  jira/ git/ files/ trace/ http/ ports/ regex/ codec/
-  usage/ prompt/ context/ ask/ tools/ search/ lineage/ compare/   各含 tool.js
-  translate/ promptopt/ commitmsg/ review/ aisummary/             AI 工具（各含 tool.js，共享 makeLlmHelper）
+  aiassist/               AI 助手 7 合一（tool.js，PRESETS 表：问答/翻译/优化/评审/提交信息/摘要/对比，共享 makeLlmHelper）
+  calc/                   计算台 5 合一（tool.js，子模式：编解码/正则/Cron/文本对比/生成器）
+  jira/ git/ files/ trace/ http/ ports/                     各含 tool.js
+  usage/ prompt/ context/ tools/ search/ lineage/           会话透视类，各含 tool.js
   aiusage/                        AI 旁路调用台账（tool.js，读 makeLlmHelper 落的 toolbox-ai-usage.json）
-  txtdiff/                        文本对比（tool.js，纯 JS 行级 LCS diff，统一视图 + 相同段折叠）
-  cron/                           Cron 表达式（tool.js，5 段解析 + 未来运行时刻 + 预设；日/周 OR 语义）
-  gen/                            生成器（tool.js，UUID v4/随机串/哈希，node 子进程真 crypto）
   selfview/                       界面自查：tool.js（Tab + pull 命令队列 + ui_* 模型工具）+ client.js（getDisplayMedia 截屏/语义快照/DOM 操作/面板按钮条/粘贴进聊天框）
 ```
 
-AI 工具 Tab 顺序 16-20：翻译 / 提示优化 / 提交信息 / 评审 / 摘要；均 Host-only 免批准、消耗真实 API 额度、记录落盘 `.dsh-dynamic-toolbox/toolbox-<key>.json`。台账查看 = Tab 21「AI 用量」（读 `.dsh-dynamic-toolbox/toolbox-ai-usage.json`，总计/按工具聚合/明细/两步清空）。
+AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评审/提交信息/摘要/对比，全部经共享 makeLlmHelper 路由（provider/model 下拉）；历史按 preset 沿用原 `toolbox-{ask,translate,promptopt,review,commitmsg,aisummary,compare}.json` 落盘文件与台账 tool 键（历史与用量无缝连续）；大本体（git diff/日志采样/对比结果）留闭包不进 state。台账查看 = Tab「AI 用量」（读 `.dsh-dynamic-toolbox/toolbox-ai-usage.json`，总计/按工具聚合/明细/两步清空）。
+
+计算台（Tab「计算」）：子模式芯片切换 编解码/正则/Cron/文本对比/生成器；各子模式状态独立命名空间（`st.codec/regex/cron/txtdiff/gen`）；派生大结果（cron 字段 Set、diff 行、生成列表）留闭包不进 state。
 
 加载链路：`payload 桩（~0.9KB，只探测根目录）` → `loader.js` → `shared/host.js + plugins/<key>/tool.js`。桩与 loader 的 new Function 帧显式下传 ctx/harness/console。框架 Client 半同样是加载桩：经 Host 半 `toolbox/client-impl` RPC 实时拉磁盘 `plugins/toolbox/client.js` 求值（ctx/React/host/styles/console 显式下传），改 UI 重跑 tbx 即生效、无需重新 define/批准。
 
@@ -39,12 +39,9 @@ AI 工具 Tab 顺序 16-20：翻译 / 提示优化 / 提交信息 / 评审 / 摘
 | 1 | toolbox | Host+Client | ✅ WebUI 批一次 | 是 |
 | 2-4 | jira / git / files | Host-only | 免批 | 是 |
 | 5、27 | theme-teal / theme-amber | Client-only | ✅ 批一次 | **否**（按需手动激活，互斥） |
-| 6-18 | trace / http / ports / regex / codec / usage / prompt / context / ask / tools / search / lineage / compare | Host-only | 免批 | 是 |
-| 19-23 | translate / promptopt / commitmsg / review / aisummary | Host-only | 免批 | 是 |
+| 6-13 | trace / http / ports / calc / usage / prompt / context / aiassist | Host-only | 免批 | 是 |
+| 15-17 | tools / search / lineage | Host-only | 免批 | 是 |
 | 24 | aiusage | Host-only | 免批 | 是 |
-| 25 | txtdiff | Host-only | 免批 | 是 |
-| 26 | cron | Host-only | 免批 | 是 |
-| 28 | gen | Host-only | 免批 | 是 |
 | 29 | selfview（界面自查） | Host+Client | ✅ 批一次 | **自动发起**（autoStart 条目重建时 runner.run 非阻塞发起 → 批准卡自动弹出，点一次允许即启动；授权不跨进程，Client 半插件每进程至少批一次是安全闸门） |
 
 最终启动集合 = 上表默认 **∩** `.dsh-dynamic-toolbox/toolbox-plugins.json` 启停记忆（记录为关的不启动）。

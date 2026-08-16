@@ -18,7 +18,10 @@
   `track = { root, session, tool }` 让每次调用结果异步追加进用量台账 `.dsh-dynamic-toolbox/toolbox-ai-usage.json`（cap 100，不阻塞响应），`rollup(root, tool)` 取该工具累计 `{ calls, out }` 展示在路由行；
   模型清单缓存监听 `llm/adapters-updated` 自动失效（provider 拓扑变化不陈旧）；
   `routeRow` 渲染 provider/model 双下拉（provider 切换走 `data-action-onchange="route"`，工具 handler 里把 `st.model` 清空即可）。
-  参考实现：`plugins/ask|compare|translate|promptopt|commitmsg|review|aisummary/tool.js`（7 个 AI 面板全部走 `makeLlmHelper`，无重复路由代码）。
+  参考实现：`plugins/aiassist/tool.js`（AI 助手 7 合一：PRESETS 表驱动 问答/翻译/优化/评审/提交信息/摘要/对比，
+  preset = { id, label, mode:'single'|'multi', input:'text'|'fileOrText'|'gitsource'|'sessionlog', params, sys(st), store, cap }——
+  新增 AI 用途只需在 PRESETS 加一行；大本体进闭包；台账 tool 键 = preset id）。
+  多合一计算类参考：`plugins/calc/tool.js`（子模式命名空间 `st.<sub>` + 子模式芯片切换）。
 
 ## 新工具三步
 

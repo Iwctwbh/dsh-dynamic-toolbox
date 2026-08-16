@@ -490,6 +490,6 @@ return {
       return out
     }
 
-    tryRegisterTool(ctx, { id: 'ai', label: 'AI 助手', order: 11 }, handler)
+    tryRegisterTool(ctx, { id: 'aiassist', label: 'AI 助手', order: 11 }, handler)
   },
 }

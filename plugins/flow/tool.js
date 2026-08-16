@@ -174,18 +174,23 @@ return {
       '</div></div>'
     }
 
-    // 平行卡片组：同一 step 的多个普通工具调用并排，各自带状态
+    // 平行调用组：同一 step 的多个普通工具调用，从主干向右各分一条支线（├▶），末条 ╰▶ 合并回主干
     const renderPar = (node) => {
-      const cards = node.calls.map((c) => {
+      const n = node.calls.length
+      const rows = node.calls.map((c, i) => {
         const km = KIND_META[c.cat] || KIND_META.builtin
-        return '<div class="fl-card" style="border-color:' + km.color + '44">' +
-          '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
-          statusGlyph(c.status, c.dur) + '</div>' +
-          '<div class="fl-name">' + esc(c.name) + '</div>' +
-          '<div class="fl-args">' + esc(oneLine(c.argsRaw, 64)) + '</div>' +
+        const glyph = n === 1 ? '├▶' : (i === n - 1 ? '╰▶' : '├▶')
+        return '<div class="fl-par-row">' +
+          '<span class="fl-git">' + glyph + '</span>' +
+          '<div class="fl-card" style="border-color:' + km.color + '44">' +
+            '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
+            statusGlyph(c.status, c.dur) + '</div>' +
+            '<div class="fl-name">' + esc(c.name) + '</div>' +
+            '<div class="fl-args">' + esc(oneLine(c.argsRaw, 64)) + '</div>' +
+          '</div>' +
         '</div>'
       })
-      return '<div class="fl-row"><div class="fl-par">' + cards.join('') + '</div></div>'
+      return '<div class="fl-row"><div class="fl-par">' + rows.join('') + '</div></div>'
     }
 
     // 子代理分支（git 树）：┌─ 分出 / 支线步骤 / └─ 合并

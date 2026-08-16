@@ -68,9 +68,9 @@ const check = (label, cond, detail) => {
   check('自动刷新声明 data-autorefresh=2000', r.html.indexOf('data-autorefresh="2000"') >= 0)
   check('用户/助手消息节点', r.html.indexOf('帮我看下这个目录') >= 0 && r.html.indexOf('好的，我先并行读文件') >= 0)
   check('箭头连接符 ▼', r.html.indexOf('fl-arrow') >= 0 && r.html.indexOf('▼') >= 0)
-  // 平行卡片：read+grep 同 step 同组（fl-par 容器里两张卡）
-  const parMatch = r.html.match(/fl-par[\s\S]*?fl-row/)
-  check('平行卡片组（read+grep 并排）', r.html.indexOf('fl-par') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
+  // 平行调用：read+grep 同 step → 从主干向右各分一条支线（├▶ / ╰▶ 合并）
+  check('平行调用向右分支（├▶ 与 ╰▶）', r.html.indexOf('├▶') >= 0 && r.html.indexOf('╰▶') >= 0)
+  check('平行卡片组（read+grep 各一张卡）', r.html.indexOf('fl-par') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
   check('调用状态 ✓ 与耗时', r.html.indexOf('✓') >= 0)
   // 子代理 git 树
   check('子代理分支符号 ├─', r.html.indexOf('├─') >= 0)

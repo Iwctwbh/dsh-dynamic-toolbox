@@ -21,7 +21,10 @@ const tryRegisterTool = (ctx, desc, handler) => {
   let off = null
   let regSeen = null
   const once = () => {
-    const reg = ctx.get('toolboxRegistry')
+    // ctx.get 在服务重 provide 的窗口期可能 throw（isolate key 变化）——必须捕获，
+    // 否则一次异常就让 interval 心跳中断，注册再也无法自愈
+    let reg
+    try { reg = ctx.get('toolboxRegistry') } catch (e) { return }
     if (!reg || typeof reg.register !== 'function') return
     if (reg === regSeen && off) return
     if (off) { try { off() } catch (e) {} off = null }

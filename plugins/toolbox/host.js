@@ -515,18 +515,25 @@ return {
         const pid = String(s).split('→')[1]
         if (pid) justDefined.add(pid)
       }
+      const reattachAgent = sid ? agents.get(sid) : undefined
       const reattached = []
       const reattachFailed = []
-      for (const r of runner.inventory()) {
-        if (sid && r.agentId !== sid) continue
-        if (!r.activeRun) continue
-        if (r.packages.some((p) => p.hasClientHalf)) continue
-        if (justDefined.has(r.pluginId)) continue
-        const pkg = r.currentPackageId || r.nextPackageId
-        if (!pkg) continue
-        const rr = await runner.run(agent, r.pluginId, pkg, 'run')
-        if (rr && rr.ok) reattached.push(r.pluginId)
-        else reattachFailed.push(r.pluginId + ': ' + ((rr && (rr.message || rr.reason)) || '重跑失败'))
+      if (reattachAgent) {
+        for (const r of runner.inventory()) {
+          if (sid && r.agentId !== sid) continue
+          if (!r.activeRun) continue
+          if (r.packages.some((p) => p.hasClientHalf)) continue
+          if (justDefined.has(r.pluginId)) continue
+          const pkg = r.currentPackageId || r.nextPackageId
+          if (!pkg) continue
+          try {
+            const rr = await runner.run(reattachAgent, r.pluginId, pkg, 'run')
+            if (rr && rr.ok) reattached.push(r.pluginId)
+            else reattachFailed.push(r.pluginId + ': ' + ((rr && (rr.message || rr.reason)) || '重跑失败'))
+          } catch (e) {
+            reattachFailed.push(r.pluginId + ': ' + String((e && e.message) || e))
+          }
+        }
       }
       if (reattached.length) console.log('toolbox: 框架重启，确定性重挂运行中工具: ' + reattached.join('、'))
       if (reattachFailed.length) console.log('toolbox: 重挂失败: ' + reattachFailed.join('；'))

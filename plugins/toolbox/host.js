@@ -560,15 +560,21 @@ return {
           }
         }
       } catch (e) {}
+      // 保险丝（MiMo 评审 H1）：识别不出框架自身时（findManifest 失败/清单缺 toolbox 条目），
+      // selfPluginIds 为空、排除失效——此时保守排除所有含 Client 半插件（框架必含 Client 半，绝不循环；
+      // 代价仅是 selfview 这类留待心跳/手动重跑，不冒重启循环风险）
+      const selfIdSafe = selfPluginIds.size > 0
       if (reattachAgent) {
         for (const r of runner.inventory()) {
+          if (stopped) break // M2：框架停止中立即中断重挂
           if (sid && r.agentId !== sid) continue
           if (!r.activeRun) continue
+          const hasClient = r.packages.some((p) => p.hasClientHalf)
           if (selfPluginIds.has(r.pluginId)) continue // 框架自身绝不重挂（防重启循环）
+          if (!selfIdSafe && hasClient) continue // 识别失败时的保守兜底
           if (justDefined.has(r.pluginId)) continue
           const pkg = r.currentPackageId || r.nextPackageId
           if (!pkg) continue
-          const hasClient = r.packages.some((p) => p.hasClientHalf)
           try {
             const rr = await runner.run(reattachAgent, r.pluginId, pkg, 'run')
             if (rr && rr.ok) {

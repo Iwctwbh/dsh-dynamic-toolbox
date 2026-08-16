@@ -98,12 +98,16 @@ return {
 
     // ---- Markdown → 流程模型 ----
     // 约定：# 标题 / ## 步骤 / ### gate:类型 条件名 / - 是 → 目标 / - 否 → 目标 / - 其他=要点 / 段落=描述
+    // ``` 代码围栏内的内容不解析（围栏里的 ## / ### gate: 是示例文本，不产生幻影节点）
     const parseFlow = (md) => {
       const lines = String(md || '').split(/\r?\n/)
       let title = ''
       const nodes = []
       let cur = null
+      let inFence = false
       for (const ln of lines) {
+        if (/^\s*```/.test(ln)) { inFence = !inFence; continue } // 围栏开关
+        if (inFence) continue
         const h1 = /^#\s+(.+)/.exec(ln)
         if (h1) { if (!title) title = h1[1].trim(); continue }
         const gate = /^###\s+gate:(\w+)\s*(.*)/.exec(ln)
@@ -228,15 +232,34 @@ return {
     }
 
     // ---- handler ----
+    // 文件名消毒（state 回传的 name 不可信）：剔除路径分隔符、.. 遍历、前导点、控制字符——
+    // 防 save/del/open 把相对路径解析到 flows 目录外（Qwen 评审指出的路径遍历→任意文件删除）
+    const sanitizeName = (n) => String(n == null ? '' : n)
+      .replace(/\.{2,}/g, '')          // .. 路径遍历
+      .replace(/[\\/:*?"<>|]/g, '')     // 路径分隔符与非法字符
+      .replace(/^\.+/, '')              // 前导点
+      .trim()
+
     const handler = async ({ action, fields, state, root, session }) => {
       const ws = resolveWorkspace(ctx, root, session)
       const st = (state && typeof state === 'object' && state) ? state : { files: [], name: '', md: '', dirty: false, view: 'split', notice: null, confirmDel: false }
       if (!Array.isArray(st.files)) st.files = []
       const el = fields && fields.__el ? fields.__el : {}
+      // state 回传的 name 统一消毒（不可信输入）
+      st.name = sanitizeName(st.name)
+      // md 体量上限：state 每次动作往返传输，超阈值截断防大包（64KB）
+      const MD_CAP = 64 * 1024
+      if (typeof st.md === 'string' && st.md.length > MD_CAP) {
+        st.md = st.md.slice(0, MD_CAP)
+        st.notice = '⚠ 文档超 64KB 已截断（state 每次动作往返，过大影响响应）'
+      }
       // 同步表单
-      if (typeof fields.md === 'string' && fields.md !== st.md) { st.md = fields.md; st.dirty = true }
-      if (typeof fields.name === 'string' && fields.name !== st.name) { st.name = fields.name.replace(/[\\/:*?"<>|]/g, '').trim(); st.dirty = true }
-      const pick = typeof fields.pick === 'string' ? fields.pick : ''
+      if (typeof fields.md === 'string' && fields.md !== st.md) { st.md = fields.md.length > MD_CAP ? fields.md.slice(0, MD_CAP) : fields.md; st.dirty = true }
+      if (typeof fields.name === 'string') {
+        const fn = sanitizeName(fields.name)
+        if (fn !== st.name) { st.name = fn; st.dirty = true }
+      }
+      const pick = sanitizeName(typeof fields.pick === 'string' ? fields.pick : '')
 
       if (action === 'new') {
         st.name = 'workflow-' + String(Date.now()).slice(-5)

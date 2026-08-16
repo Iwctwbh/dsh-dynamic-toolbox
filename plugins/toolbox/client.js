@@ -508,6 +508,7 @@ return {
       const panelRef = React.useRef(null)
       const stateRef = React.useRef({})
       const htmlRef = React.useRef({})
+      const htmlScrollRef = React.useRef(null) // 静默刷新前记录的滚动位置（effect 里恢复，防自动刷新打断阅读）
       const seqRef = React.useRef({}) // toolId -> 最新请求序号：丢弃过期响应，防 provider/模型联动竞态
       const managingRef = React.useRef(false)
       managingRef.current = managing
@@ -516,6 +517,17 @@ return {
 
       // 停靠模式与激活 Tab 变化即记忆（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
       React.useEffect(() => { lsWrite({ dockMode, active }) }, [dockMode, active])
+
+      // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
+      React.useEffect(() => {
+        const scrolls = htmlScrollRef.current
+        if (!scrolls || !panelRef.current) return
+        htmlScrollRef.current = null
+        try {
+          const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
+          scrollers.forEach((s, i) => { if (i < scrolls.length) s.scrollTop = scrolls[i] })
+        } catch (e) {}
+      }, [html])
 
       const currentCwd = props.useSessions((s) => {
         if (!s || !s.current) return undefined
@@ -574,6 +586,16 @@ return {
           if (res && res.ok) {
             stateRef.current[toolId] = res.state
             htmlRef.current[toolId] = res.html
+            // 静默刷新（自动轮询）时保存滚动位置：全量 innerHTML 重渲染会丢滚动/选择，
+            // 先记录各可滚动子容器 scrollTop，setHtml 后经 effect 恢复（见 htmlScrollRef）
+            if (silent && panelRef.current) {
+              try {
+                const scrolls = []
+                const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
+                for (const s of scrollers) scrolls.push(s.scrollTop)
+                htmlScrollRef.current = scrolls
+              } catch (e) {}
+            }
             setHtml(res.html)
             // 自动刷新约定：工具 HTML 带 data-autorefresh="ms" → 抽屉静默定时重拉（静默 = 不转圈）
             const am = /data-autorefresh="(\d+)"/.exec(res.html)

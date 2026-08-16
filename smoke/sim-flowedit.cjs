@@ -108,6 +108,15 @@ const MD = '# 测试流程\n\n## 01 输入\n收集需求\n\n### gate:ifElse 质�
   check('门分支 → ├─/╰─ 与 是/否 标签', r2.html.indexOf('├─') >= 0 && r2.html.indexOf('╰─') >= 0 && r2.html.indexOf('是') >= 0 && r2.html.indexOf('否') >= 0)
   check('门分支 → 目标步骤名', r2.html.indexOf('→ 03 输出') >= 0 || r2.html.indexOf('03 输出') >= 0)
 
+  // 安全：state 回传的 name 路径遍历消毒（Qwen 评审 H1）
+  const evil = await h({ action: 'save', fields: {}, state: { files: [], name: '../../evil', md: 'x', dirty: true, view: 'split', notice: null, confirmDel: false }, root: ROOT, session: 's1' })
+  check('路径遍历 name 被消毒（../../evil → evil）', evil.state.name === 'evil', evil.state.name)
+  check('消毒后落盘在 flows 内（不越界）', !!mem[ROOT + '/.dsh-dynamic-toolbox/data/flows/evil.md'], '')
+  // 代码围栏不解析（幻影节点）
+  const fenceMd = '# T\n\n## 真实步骤\n\n```\n## 幻影步骤\n### gate:ifElse 假门\n```\n'
+  const rf = await h({ action: 'x', fields: { md: fenceMd }, state: { files: [], name: 't', md: '', dirty: false, view: 'graph', notice: null, confirmDel: false }, root: ROOT, session: 's1' })
+  check('代码围栏内 ## 不产生幻影节点', rf.html.indexOf('幻影步骤') < 0 && rf.html.indexOf('真实步骤') >= 0)
+
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')
   process.exit(failures ? 1 : 0)
 })().catch((e) => { console.error('仿真异常:', e); process.exit(2) })

@@ -93,10 +93,16 @@ return {
           if (d.callId != null) byCallId[String(d.callId)] = it
         } else if (ev.type === 'tool/result') {
           const m = d.message || {}
-          const block = Array.isArray(m.content) ? m.content[0] : null
-          const callId = block && block.toolCallId != null ? String(block.toolCallId) : null
-          const text = block ? textOf(block.content) : ''
-          const failed = !!(d.error || (block && block.isError))
+          // 遍历 content 找第一个带 toolCallId 的块（首块非 tool-result 时也能配上对）
+          let callId = null
+          let text = ''
+          if (Array.isArray(m.content)) {
+            for (const block of m.content) {
+              if (callId == null && block && block.toolCallId != null) callId = String(block.toolCallId)
+              if (!text && block) { const t = textOf(block.content); if (t) text = t }
+            }
+          }
+          const failed = !!(d.error || (Array.isArray(m.content) && m.content[0] && m.content[0].isError))
           const it = callId ? byCallId[callId] : null
           if (it) {
             it.status = failed ? 'error' : 'ok'
@@ -210,15 +216,16 @@ return {
       '</div></div>'
     }
 
-    // 完整详情（点击卡片展开）：完整输入参数（美化 JSON）+ 完整返回结果
+    // 完整详情（点击卡片展开）：完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）
     const detailBlock = (c) => {
       let input = c.argsRaw || ''
       try { input = JSON.stringify(JSON.parse(c.argsRaw || '{}'), null, 2) } catch (e) {}
-      const out = c.status === 'pending' ? '（进行中，尚无返回）' : (c.resultText || '（空返回）')
       const cap = 8000
+      const inShown = input.length > cap ? input.slice(0, cap) + '\n…（截断，共 ' + input.length + ' 字符）' : input
+      const out = c.status === 'pending' ? '（进行中，尚无返回）' : (c.resultText || '（空返回）')
       const outShown = out.length > cap ? out.slice(0, cap) + '\n…（截断，共 ' + out.length + ' 字符）' : out
       return '<div class="fl-detail">' +
-        '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入</span><pre class="fl-pre">' + esc(input) + '</pre></div>' +
+        '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入' + (input.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(inShown) + '</pre></div>' +
         '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
       '</div>'
     }
@@ -318,11 +325,15 @@ return {
       if (!shown.length) {
         parts.push('<div class="tb-notice">当前会话还没有事件</div>')
       } else {
+        // 子代理分支并行展开（串行 await 会让多个子代理分支的 readLog 延迟叠加）
+        const nodeHtmls = await Promise.all(shown.map((n) => {
+          if (n.t === 'msg') return Promise.resolve(renderMsg(n.it))
+          if (n.t === 'par') return Promise.resolve(renderPar(n, st.expanded))
+          return renderSub(n)
+        }))
         const rows = []
-        for (const n of shown) {
-          if (n.t === 'msg') rows.push(renderMsg(n.it))
-          else if (n.t === 'par') rows.push(renderPar(n, st.expanded))
-          else rows.push(await renderSub(n))
+        for (const h of nodeHtmls) {
+          rows.push(h)
           rows.push(ARROW)
         }
         if (rows.length && rows[rows.length - 1] === ARROW) rows.pop()

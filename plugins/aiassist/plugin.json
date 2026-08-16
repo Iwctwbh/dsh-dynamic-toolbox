@@ -1,0 +1,21 @@
+{
+  "key": "aiassist",
+  "idPrefix": "aias",
+  "name": "AI 助手（问答/翻译/优化/评审/提交信息/摘要/对比 7 合一）",
+  "purpose": "Host-only：原 ask/translate/promptopt/review/commitmsg/aisummary/compare 七个 AI 工具合一的单 Tab「AI 助手」，PRESETS 表 + 通用 handler，preset 芯片切换（含 compare 多模型并发 mode），切换 prompt/system 即切换用途；沿用原 toolbox-*.json 落盘文件与台账 tool 键（历史与用量无缝连续）",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "llm",
+    "agentDefaultModel",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 14,
+  "autoStart": true,
+  "approval": false
+}

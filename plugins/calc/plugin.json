@@ -1,0 +1,20 @@
+{
+  "key": "calc",
+  "idPrefix": "calc",
+  "name": "计算台（编解码/正则/Cron/文本对比/生成器 5 合一）",
+  "purpose": "Host-only：codec/regex/cron/txtdiff/gen 五个纯计算小工具合一的单 Tab「计算」，子模式芯片切换（Base64/URL/JSON/时间戳编解码、正则匹配替换、5 段 cron 解析、行级 LCS 文本对比、UUID/随机串/哈希），消除零散小 Tab 的突兀感",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 9,
+  "autoStart": true,
+  "approval": false
+}

@@ -103,7 +103,8 @@ return {
 
     const render = (st) => {
       const parts = []
-      parts.push('<div class="jr-tabpanel tb-root">')
+      // Tab 角标：有数据时显示主额度余量（借鉴 better-sidebar tab 角标）
+      parts.push('<div class="jr-tabpanel tb-root" data-tab-badge="' + (st.data ? String(st.data.main.remaining) : '') + '">')
       parts.push('<div class="tb-row">' +
         '<button type="button" class="tb-btn tb-btn-primary" data-action="query"' + (st.loading ? ' disabled' : '') + '>' + (st.loading ? '查询中…' : '刷新') + '</button>' +
         (st.at ? '<span class="tb-note">更新于 ' + esc(st.at) + '</span>' : '') +

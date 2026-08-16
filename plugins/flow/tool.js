@@ -243,7 +243,7 @@ return {
       const CAP = 60
       const shown = nodes.slice(-CAP)
       const parts = []
-      parts.push('<div class="jr-tabpanel tb-root tb-pane" data-autorefresh="' + (st.live ? '2000' : '') + '">')
+      parts.push('<div class="jr-tabpanel tb-root tb-pane" data-autorefresh="' + (st.live ? '2000' : '') + '" data-tab-badge="' + (st.live ? String(nodes.length) : '') + '">')
       // 固定头
       parts.push('<div class="tb-pane-head">')
       parts.push('<div class="tb-row">' +

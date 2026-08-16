@@ -25,6 +25,12 @@ return {
       '.jr-drawer{position:fixed;right:24px;top:64px;z-index:1300;width:520px;max-width:94vw;max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-overlay,#1e1f24);border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:10px;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;pointer-events:auto;box-shadow:-14px 0 44px rgba(0,0,0,.3);animation:jrDrawerIn .16s ease-out;overflow:hidden}',
       '.jr-docked{right:0;top:0;bottom:0;max-height:none;border-radius:0;border-top:none;border-right:none;border-bottom:none;border-left:1px solid var(--dsw-alias-border-l2,#4a4b55);box-shadow:-8px 0 24px rgba(0,0,0,.22)}',
       '.jr-docked .jr-drawer-body{flex:1;min-height:0}',
+      // 底部全宽面板（借鉴 dsh-better-sidebar 双工作台）：贴底全宽，高度经顶边把手拖拽
+      '.jr-docked-bottom{left:0;right:0;bottom:0;top:auto;width:100%;max-width:none;max-height:80vh;border-radius:0;border:none;border-top:1px solid var(--dsw-alias-border-l2,#4a4b55);box-shadow:0 -8px 24px rgba(0,0,0,.22);animation:jrDrawerUp .16s ease-out}',
+      '.jr-docked-bottom .jr-drawer-body{flex:1;min-height:0}',
+      '@keyframes jrDrawerUp{from{transform:translateY(28px);opacity:.3}to{transform:translateY(0);opacity:1}}',
+      '.jr-resize-top{position:absolute;left:0;right:0;top:0;height:6px;cursor:ns-resize;z-index:6;touch-action:none}',
+      '.jr-resize-top:hover{background:rgba(59,130,246,.28)}',
       '@keyframes jrDrawerIn{from{transform:translateX(28px);opacity:.3}to{transform:translateX(0);opacity:1}}',
       '.jr-drawer-header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);background:var(--dsw-alias-bg-layer-1,#26272e);cursor:move;user-select:none}',
       '.jr-drawer-title{font-weight:600;flex:1;font-size:14px}',
@@ -53,6 +59,8 @@ return {
       '.tb-tab-active{color:var(--dsw-alias-brand-primary,#3b82f6);border-color:var(--dsw-alias-border-l2,#4a4b55);background:var(--dsw-alias-bg-layer-1,#26272e)}',
       // ---- Tab 忙碌转圈（替代面板内「处理中…」横幅，操作期间面板内容保持不动） ----
       '.tb-tab-spin{display:inline-block;width:10px;height:10px;border:1.5px solid var(--tb-accent-border,rgba(91,141,239,.35));border-top-color:var(--tb-accent,#3f6fd9);border-radius:50%;animation:tbSpin .7s linear infinite}',
+      // ---- Tab 角标（工具经 data-tab-badge 声明；如流程图节点数 / 配额余量） ----
+      '.tb-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;padding:0 4px;border-radius:999px;font-size:9.5px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--tb-accent-bg,rgba(91,141,239,.16));color:var(--tb-accent-text,#7fa7f0);border:1px solid var(--tb-accent-border,rgba(91,141,239,.35))}',
       '@keyframes tbSpin{to{transform:rotate(360deg)}}',
       '.tb-empty{color:var(--dsw-alias-label-secondary,#9a9aa5);font-size:12px;text-align:center;padding:26px 0;line-height:1.7}',
       '.jr-snap-indicator{position:fixed;right:0;top:0;bottom:0;width:4px;background:var(--dsw-alias-brand-primary,#3b82f6);opacity:.65;z-index:1299;pointer-events:none}',
@@ -445,7 +453,15 @@ return {
 
     function Drawer(props) {
       const isOpen = useOpenState()
-      const [docked, setDocked] = React.useState(() => { const s = lsRead(); return s && typeof s.docked === 'boolean' ? s.docked : true })
+      // 三态停靠（借鉴 dsh-better-sidebar 双工作台）：right 右侧栏 / bottom 底部全宽面板 / float 浮动
+      // 兼容旧版 docked 布尔（docked:false → float；docked:true/无 → right）
+      const [dockMode, setDockMode] = React.useState(() => {
+        const s = lsRead()
+        if (s && (s.dockMode === 'right' || s.dockMode === 'bottom' || s.dockMode === 'float')) return s.dockMode
+        return (s && s.docked === false) ? 'float' : 'right'
+      })
+      const docked = dockMode !== 'float' // 右/底都算停靠（不用浮动 pos）
+      const setDocked = (v) => setDockMode(v ? 'right' : 'float') // 旧调用点兼容（吸附右边缘）
       const [pos, setPos] = React.useState(() => { const s = lsRead(); return s && s.pos && typeof s.pos.x === 'number' && typeof s.pos.y === 'number' ? s.pos : null })
       const [drag, setDrag] = React.useState(null)
       const [width, setWidth] = React.useState(() => { const s = lsRead(); return s && typeof s.width === 'number' ? s.width : null })
@@ -455,6 +471,7 @@ return {
       const [tools, setTools] = React.useState([])
       const [active, setActive] = React.useState(() => { const s = lsRead(); return s && typeof s.active === 'string' ? s.active : null })
       const [autoMs, setAutoMs] = React.useState({}) // toolId -> 自动刷新毫秒（面板 HTML 声明 data-autorefresh 驱动）
+      const [tabBadges, setTabBadges] = React.useState({}) // toolId -> Tab 角标文本（面板 HTML 声明 data-tab-badge 驱动；借鉴 better-sidebar tab 角标）
       const [html, setHtml] = React.useState(null)
       const [error, setError] = React.useState(null)
       const [copied, setCopied] = React.useState(null)
@@ -481,8 +498,8 @@ return {
       const activeRef = React.useRef(null) // 延迟回调里取最新 active（重启落定后的面板刷新）
       activeRef.current = active
 
-      // 停靠状态与激活 Tab 变化即记忆（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
-      React.useEffect(() => { lsWrite({ docked, active }) }, [docked, active])
+      // 停靠模式与激活 Tab 变化即记忆（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
+      React.useEffect(() => { lsWrite({ dockMode, active }) }, [dockMode, active])
 
       const currentCwd = props.useSessions((s) => {
         if (!s || !s.current) return undefined
@@ -550,6 +567,20 @@ return {
                 const ms = Math.max(1500, parseInt(am[1], 10) || 2000)
                 if (has && cur[toolId] === ms) return cur
                 return { ...cur, [toolId]: ms }
+              }
+              if (!has) return cur
+              const next = { ...cur }
+              delete next[toolId]
+              return next
+            })
+            // Tab 角标约定：工具 HTML 带 data-tab-badge="文本" → 该工具 Tab 显示角标（空字符串=清除）
+            const bm = /data-tab-badge="([^"]{0,12})"/.exec(res.html)
+            setTabBadges((cur) => {
+              const has = Object.prototype.hasOwnProperty.call(cur, toolId)
+              const val = bm ? bm[1] : null
+              if (val) {
+                if (has && cur[toolId] === val) return cur
+                return { ...cur, [toolId]: val }
               }
               if (!has) return cur
               const next = { ...cur }
@@ -822,7 +853,7 @@ return {
         const baseX = rect ? rect.left : 0
         const baseY = rect ? rect.top : 0
         setPos({ x: baseX, y: baseY })
-        setDocked(false)
+        setDockMode('float')
         setDrag({ startX: e.clientX, startY: e.clientY, baseX, baseY })
         try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) {}
       }
@@ -843,8 +874,8 @@ return {
         setDrag(null)
         setSnapHint(false)
         try { e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) {}
-        if (near) { setDocked(true); lsWrite({ docked: true }) }
-        else if (e.type === 'pointerup') lsWrite({ docked: false, pos: { x, y: drag.baseY + e.clientY - drag.startY } })
+        if (near) { setDockMode('right'); lsWrite({ dockMode: 'right' }) }
+        else if (e.type === 'pointerup') lsWrite({ dockMode: 'float', pos: { x, y: drag.baseY + e.clientY - drag.startY } })
       }
 
       function onResizeStart(e, mode) {
@@ -870,6 +901,9 @@ return {
         const maxH = vh - 96
         if (resize.mode === 'left') {
           setWidth(clamp(resize.baseW + (resize.startX - e.clientX), MIN_W, maxW))
+        } else if (resize.mode === 'top') {
+          // 底部面板：从顶边上拖增加高度
+          setHeight(clamp(resize.baseH + (resize.startY - e.clientY), MIN_H, maxH))
         } else if (resize.mode === 'right') {
           setWidth(clamp(resize.baseW + (e.clientX - resize.startX), MIN_W, maxW))
         } else if (resize.mode === 'bottom') {
@@ -889,6 +923,7 @@ return {
             const maxH = vh - 96
             const patch = {}
             if (resize.mode === 'left') patch.width = clamp(resize.baseW + (resize.startX - e.clientX), MIN_W, maxW)
+            else if (resize.mode === 'top') patch.height = clamp(resize.baseH + (resize.startY - e.clientY), MIN_H, maxH)
             else if (resize.mode === 'right') patch.width = clamp(resize.baseW + (e.clientX - resize.startX), MIN_W, maxW)
             else if (resize.mode === 'bottom') patch.height = clamp(resize.baseH + (e.clientY - resize.startY), MIN_H, maxH)
             else if (resize.mode === 'corner') {
@@ -923,19 +958,24 @@ return {
       const dockButton = React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
-        title: docked ? '取消停靠（浮动）' : '停靠到右侧',
+        title: dockMode === 'right' ? '切换到底部面板' : dockMode === 'bottom' ? '切换为浮动' : '停靠到右侧',
         onPointerDown: (ev) => ev.stopPropagation(),
-        onClick: (ev) => { ev.stopPropagation(); setDocked(!docked) },
+        onClick: (ev) => { ev.stopPropagation(); setDockMode(dockMode === 'right' ? 'bottom' : dockMode === 'bottom' ? 'float' : 'right') },
       },
-        docked
+        dockMode === 'right'
           ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
               React.createElement('rect', { x: 2.5, y: 2.5, width: 8, height: 8, rx: 1 }),
               React.createElement('rect', { x: 5.5, y: 5.5, width: 6, height: 6, rx: 1, opacity: 0.55 }),
             )
-          : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
-              React.createElement('rect', { x: 2, y: 2, width: 7, height: 10, rx: 1 }),
-              React.createElement('rect', { x: 10.5, y: 5, width: 2.5, height: 7, rx: 0.5, opacity: 0.55 }),
-            ),
+          : dockMode === 'bottom'
+            ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
+                React.createElement('rect', { x: 2, y: 8, width: 10, height: 3.5, rx: 1 }),
+                React.createElement('rect', { x: 2, y: 3, width: 10, height: 3, rx: 1, opacity: 0.45 }),
+              )
+            : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
+                React.createElement('rect', { x: 2, y: 2, width: 7, height: 10, rx: 1 }),
+                React.createElement('rect', { x: 10.5, y: 5, width: 2.5, height: 7, rx: 0.5, opacity: 0.55 }),
+              ),
       )
 
       const closeButton = React.createElement('button', {
@@ -952,12 +992,22 @@ return {
       )
 
       const handles = []
-      if (docked) {
+      if (dockMode === 'right') {
         handles.push(React.createElement('div', {
           key: 'resize-left',
           className: 'jr-resize-left',
           title: '拖拽调整宽度',
           onPointerDown: (e) => onResizeStart(e, 'left'),
+          onPointerMove: onResizeMove,
+          onPointerUp: onResizeEnd,
+          onPointerCancel: onResizeEnd,
+        }))
+      } else if (dockMode === 'bottom') {
+        handles.push(React.createElement('div', {
+          key: 'resize-top',
+          className: 'jr-resize-top',
+          title: '拖拽调整高度',
+          onPointerDown: (e) => onResizeStart(e, 'top'),
           onPointerMove: onResizeMove,
           onPointerUp: onResizeEnd,
           onPointerCancel: onResizeEnd,
@@ -993,11 +1043,15 @@ return {
       }
 
       const style = {}
-      if (width) style.width = width + 'px'
-      if (height && !docked) style.height = height + 'px'
-      if (pos && !docked) {
-        style.left = pos.x + 'px'
-        style.top = pos.y + 'px'
+      if (dockMode !== 'bottom' && width) style.width = width + 'px' // 底部模式全宽，宽度不生效
+      if (dockMode === 'float') {
+        if (height) style.height = height + 'px'
+        if (pos) {
+          style.left = pos.x + 'px'
+          style.top = pos.y + 'px'
+        }
+      } else if (dockMode === 'bottom' && height) {
+        style.height = height + 'px' // 底部面板高度可调（顶边拖拽）
       }
 
       // ---- 分类归属与迁移（导航行与管理树共用同一 catOf 数据源） ----
@@ -1035,7 +1089,9 @@ return {
         className: 'tb-tab' + (t.id === active ? ' tb-tab-active' : ''),
         title: t.label + '（' + (TOOL_CATS.find((c) => c.id === catOf(t.id)) || {}).label + '）',
         onClick: () => setActive(t.id),
-      }, t.label, t.id === busyTool ? React.createElement('span', { className: 'tb-tab-spin' }) : null)
+      }, t.label,
+        tabBadges[t.id] ? React.createElement('span', { className: 'tb-tab-badge' }, tabBadges[t.id]) : null,
+        t.id === busyTool ? React.createElement('span', { className: 'tb-tab-spin' }) : null)
 
       let body = null
       if (managing) {
@@ -1227,7 +1283,7 @@ return {
 
       const drawerEl = React.createElement('div', {
         ref: drawerRef,
-        className: 'jr-drawer' + (docked ? ' jr-docked' : ''),
+        className: 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'bottom' ? ' jr-docked-bottom' : ''),
         style,
       },
         React.createElement('div', {

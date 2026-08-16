@@ -547,10 +547,24 @@ return {
       const reattached = []
       const reattachFailed = []
       const reattachAsync = [] // 含 Client 半的插件：重跑为异步 starting，浏览器端另行激活
+      // 排除框架自身（清单 id=toolbox 对应插件）：否则 reattach 重跑框架 → 框架重启再 reattach → 无限重启循环
+      const selfPluginIds = new Set()
+      try {
+        const found0 = await findManifest()
+        const tbEntry = found0 && found0.manifest && Array.isArray(found0.manifest.plugins)
+          ? found0.manifest.plugins.find((e) => e && e.id === 'toolbox') : undefined
+        const selfName = tbEntry && tbEntry.name
+        if (selfName) {
+          for (const r of runner.inventory()) {
+            if (r.packages.some((p) => p && p.name === selfName)) selfPluginIds.add(r.pluginId)
+          }
+        }
+      } catch (e) {}
       if (reattachAgent) {
         for (const r of runner.inventory()) {
           if (sid && r.agentId !== sid) continue
           if (!r.activeRun) continue
+          if (selfPluginIds.has(r.pluginId)) continue // 框架自身绝不重挂（防重启循环）
           if (justDefined.has(r.pluginId)) continue
           const pkg = r.currentPackageId || r.nextPackageId
           if (!pkg) continue

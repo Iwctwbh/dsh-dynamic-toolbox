@@ -508,7 +508,29 @@ return {
       if (!sid) { console.log('toolbox: 自动补齐跳过（无法确定当前会话）'); return }
       const res = await doRebuild(sid)
       if (stopped) { await report('stopped-after-rebuild'); return }
-      await report('done', { sid, res })
+      // 确定性重挂：框架重启后注册表是全新空表，运行中的 Host-only 插件重跑一遍，
+      // 让注册确定性落进新表（不依赖 2s 慢心跳时序；刚由 doRebuild 启动的跳过避免双跑）
+      const justDefined = new Set()
+      for (const s of (res && Array.isArray(res.defined) ? res.defined : [])) {
+        const pid = String(s).split('→')[1]
+        if (pid) justDefined.add(pid)
+      }
+      const reattached = []
+      const reattachFailed = []
+      for (const r of runner.inventory()) {
+        if (sid && r.agentId !== sid) continue
+        if (!r.activeRun) continue
+        if (r.packages.some((p) => p.hasClientHalf)) continue
+        if (justDefined.has(r.pluginId)) continue
+        const pkg = r.currentPackageId || r.nextPackageId
+        if (!pkg) continue
+        const rr = await runner.run(agent, r.pluginId, pkg, 'run')
+        if (rr && rr.ok) reattached.push(r.pluginId)
+        else reattachFailed.push(r.pluginId + ': ' + ((rr && (rr.message || rr.reason)) || '重跑失败'))
+      }
+      if (reattached.length) console.log('toolbox: 框架重启，确定性重挂运行中工具: ' + reattached.join('、'))
+      if (reattachFailed.length) console.log('toolbox: 重挂失败: ' + reattachFailed.join('；'))
+      await report('done', { sid, res, reattached: reattached.length })
       if (res && res.ok) {
         if (res.defined && res.defined.length) {
           console.log('toolbox: 自动补齐 新定义: ' + res.defined.join('、') + '；已启动: ' + (res.started || []).join('、'))

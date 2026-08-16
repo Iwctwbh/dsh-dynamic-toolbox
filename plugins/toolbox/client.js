@@ -230,6 +230,29 @@ return {
       '.tb-switch::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));transition:transform .15s,background .15s}',
       '.tb-switch-on{background:var(--tb-accent,#3f6fd9);border-color:var(--tb-accent,#3f6fd9)}',
       '.tb-switch-on::after{transform:translateX(15px);background:#fff}',
+      // ===== 流程图（flow 工具；fl- 前缀）=====
+      // 主干：自上而下节点 + 向下箭头；子代理：git 树分支（├─ │ ╰─）；普通工具组：平行卡片
+      '.fl-row{display:flex;min-width:0}',
+      '.fl-node{flex:1;min-width:0;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:8px;padding:7px 10px;display:flex;flex-direction:column;gap:3px}',
+      '.fl-node-head{display:flex;align-items:center;gap:8px;min-width:0}',
+      '.fl-tag{flex:none;display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.3px}',
+      '.fl-time{flex:none;font-size:10.5px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-variant-numeric:tabular-nums}',
+      '.fl-preview{font-size:12px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4))}',
+      '.fl-arrow{flex:none;width:100%;text-align:center;line-height:1;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-size:10px;opacity:.7}',
+      '.fl-par{flex:1;display:flex;gap:6px;flex-wrap:wrap;min-width:0}',
+      '.fl-card{flex:1;min-width:150px;max-width:100%;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:8px;padding:6px 9px;display:flex;flex-direction:column;gap:2px;background:var(--tb-input-bg,var(--dsw-alias-bg-layer-1,#26272e))}',
+      '.fl-name{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:700;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.fl-args{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.fl-spin{flex:none;display:inline-block;width:10px;height:10px;border:1.5px solid var(--tb-accent-border,rgba(91,141,239,.35));border-top-color:var(--tb-accent,#3f6fd9);border-radius:50%;animation:tbSpin .7s linear infinite}',
+      '.fl-git{flex:none;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));width:22px;text-align:center;user-select:none}',
+      '.fl-git-branch{color:var(--tb-accent-text,#7fa7f0);margin-right:4px}',
+      '.fl-branch-open{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:4px 8px;border:1px solid rgba(91,141,239,.3);border-radius:8px 8px 0 0;background:rgba(91,141,239,.06)}',
+      '.fl-branch-meta{flex:1;display:flex;align-items:center;gap:6px;padding:2px 8px;border-left:1px solid rgba(91,141,239,.3);border-right:1px solid rgba(91,141,239,.3);background:rgba(91,141,239,.03)}',
+      '.fl-branch-row{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:2px 8px;border-left:1px solid rgba(91,141,239,.3);border-right:1px solid rgba(91,141,239,.3);background:rgba(91,141,239,.03)}',
+      '.fl-branch-pill{flex:none;font-size:9.5px;padding:0 5px;border-radius:3px;background:rgba(91,141,239,.12);color:var(--tb-active-text,#7fa7f0);font-weight:600}',
+      '.fl-branch-txt{flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--tb-text-2,var(--dsw-alias-label-secondary,#9a9ba6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.fl-branch-ai{font-style:italic}',
+      '.fl-branch-close{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:4px 8px;border:1px solid rgba(91,141,239,.3);border-radius:0 0 8px 8px;background:rgba(91,141,239,.06)}',
     ].join('\n'))
 
     let open = false
@@ -382,7 +405,7 @@ return {
     const DEFAULT_CAT = {
       aiassist: 'ai', aiusage: 'ai', quota: 'ai',
       jira: 'dev', git: 'dev', files: 'dev', http: 'dev', ports: 'dev', calc: 'dev',
-      trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session',
+      trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session', flow: 'session',
       toolbox: 'system', 'theme-teal': 'system', 'theme-amber': 'system', selfview: 'system',
     }
     const CATS_LS_KEY = 'dsh.toolbox.cats'
@@ -430,6 +453,7 @@ return {
       const [resize, setResize] = React.useState(null)
       const [tools, setTools] = React.useState([])
       const [active, setActive] = React.useState(() => { const s = lsRead(); return s && typeof s.active === 'string' ? s.active : null })
+      const [autoMs, setAutoMs] = React.useState({}) // toolId -> 自动刷新毫秒（面板 HTML 声明 data-autorefresh 驱动）
       const [html, setHtml] = React.useState(null)
       const [error, setError] = React.useState(null)
       const [copied, setCopied] = React.useState(null)
@@ -480,10 +504,11 @@ return {
 
       async function loadPanel(toolId, action, el, opts) {
         if (!toolId) { setHtml(null); return }
+        const silent = Boolean(opts && opts.silent) // 静默刷新（自动轮询）：不转圈、不清错误
         const seq = (seqRef.current[toolId] || 0) + 1
         seqRef.current[toolId] = seq
-        setBusyTool(toolId)
-        setError(null)
+        if (!silent) setBusyTool(toolId)
+        if (!silent) setError(null)
         // 联动切换在途锁定：禁用面板内 select，避免在陈旧 DOM 上继续操作（成功响应会整体重渲染解锁）
         let locked = null
         const unlock = () => { if (locked) for (const s of locked) { try { s.disabled = false } catch (e) {} } }
@@ -516,6 +541,20 @@ return {
             stateRef.current[toolId] = res.state
             htmlRef.current[toolId] = res.html
             setHtml(res.html)
+            // 自动刷新约定：工具 HTML 带 data-autorefresh="ms" → 抽屉静默定时重拉（静默 = 不转圈）
+            const am = /data-autorefresh="(\d+)"/.exec(res.html)
+            setAutoMs((cur) => {
+              const has = Object.prototype.hasOwnProperty.call(cur, toolId)
+              if (am) {
+                const ms = Math.max(1500, parseInt(am[1], 10) || 2000)
+                if (has && cur[toolId] === ms) return cur
+                return { ...cur, [toolId]: ms }
+              }
+              if (!has) return cur
+              const next = { ...cur }
+              delete next[toolId]
+              return next
+            })
             // copy 契约：Host 附带 copy 字符串 → 写剪贴板并短暂提示
             if (typeof res.copy === 'string' && res.copy) {
               try {
@@ -730,6 +769,17 @@ return {
         refreshPlugins()
         return () => { try { disp() } catch (e) {} offOpen() }
       }, [])
+
+      // 面板自动刷新：当前工具的 HTML 声明了 data-autorefresh="ms" 时，静默轮询（不转圈、不抢滚动——silent 路径）
+      const curAutoMs = active ? autoMs[active] : undefined
+      React.useEffect(() => {
+        if (!isOpen || !active || !curAutoMs) return undefined
+        const disp = ctx.interval(() => {
+          if (managingRef.current) return
+          if (typeof loadPanelRef.current === 'function') loadPanelRef.current(active, '__refresh', null, { silent: true })
+        }, curAutoMs)
+        return () => { try { disp() } catch (e) {} }
+      }, [isOpen, active, curAutoMs])
 
       // 激活 Tab 变化 → 切回该工具上次的面板并刷新
       React.useEffect(() => {

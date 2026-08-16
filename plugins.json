@@ -50,6 +50,18 @@
       "purpose": "Host-only：fs 服务列目录 + 文件夹树 HTML 渲染（展开/折叠/刷新），经工具箱 RPC 注册"
     },
     {
+      "id": "flow",
+      "name": "实时流程图 (Host-only)",
+      "payload": "plugins/flow/payload.json",
+      "platform": "host-only",
+      "approval": false,
+      "autoStart": true,
+      "order": 5,
+      "idPrefix": "flow",
+      "purpose": "Host-only：当前 session 实时流程图——自上而下箭头主干（用户/助手/工具组），子代理 git 树分支（├─ 支线实时展开子会话步骤 ╰─ 合并），同步普通调用平行卡片；面板带 data-autorefresh=2000，框架每 2s 静默重拉；makeSessionLogReader 按会话缓存",
+      "note": "与「轨迹」互补：轨迹=过滤时间线+详情，流程=形态视图；live 开关可暂停自动刷新"
+    },
+    {
       "id": "theme-teal",
       "name": "工具箱主题 · 青绿（演示）",
       "payload": "plugins/theme-teal/payload.json",

@@ -1,0 +1,19 @@
+{
+  "key": "quota",
+  "idPrefix": "quota",
+  "name": "API 配额查询 (Host-only)",
+  "purpose": "Host-only：查 Kimi for Coding（k3）套餐余量（周主额度 + 5h 滑动窗口 + 并发），GET /coding/v1/usages，Key 走 环境变量→~/.dsh/.credentials.yaml 凭据链，Node 子进程 https（沙箱内 curl 走 schannel 被拒、Node 走 TUN 可直连）；脱敏渲染，key 不出子进程",
+  "platform": "host-only",
+  "inject": [
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 25,
+  "autoStart": true,
+  "approval": false
+}

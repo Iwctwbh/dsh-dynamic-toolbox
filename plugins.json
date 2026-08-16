@@ -201,6 +201,17 @@
       "purpose": "Host-only：读 .dsh-dynamic-toolbox/toolbox-ai-usage.json（AI 工具旁路调用台账，cap 100）——总计/今日统计 + 按工具聚合条形图 + 最近 20 条明细 + 两步确认清空；与「用量」（会话日志口径）互补"
     },
     {
+      "id": "quota",
+      "name": "API 配额查询 (Host-only)",
+      "payload": "plugins/quota/payload.json",
+      "platform": "host-only",
+      "approval": false,
+      "autoStart": true,
+      "order": 25,
+      "idPrefix": "quota",
+      "purpose": "Host-only：查 Kimi for Coding（k3）套餐余量（周主额度 + 5h 滑动窗口 + 并发），GET /coding/v1/usages，Key 走 环境变量→~/.dsh/.credentials.yaml 凭据链，Node 子进程 https（沙箱内 curl 走 schannel 被拒、Node 走 TUN 可直连）；脱敏渲染，key 不出子进程"
+    },
+    {
       "id": "theme-amber",
       "name": "工具箱主题 · 暖橙",
       "payload": "plugins/theme-amber/payload.json",

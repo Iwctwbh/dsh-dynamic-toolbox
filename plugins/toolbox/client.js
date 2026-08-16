@@ -380,7 +380,7 @@ return {
       { id: 'system', label: '系统' },
     ]
     const DEFAULT_CAT = {
-      aiassist: 'ai', aiusage: 'ai',
+      aiassist: 'ai', aiusage: 'ai', quota: 'ai',
       jira: 'dev', git: 'dev', files: 'dev', http: 'dev', ports: 'dev', calc: 'dev',
       trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session',
       toolbox: 'system', 'theme-teal': 'system', 'theme-amber': 'system', selfview: 'system',

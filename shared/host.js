@@ -153,10 +153,16 @@ const findRepoRoot = async (ctx) => {
   if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)
   const ss = ctx.get('sessions')
   if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }
+  // 命中校验（MiMo M1）：光「存在 plugins.json」不够（无关项目/无关 clone 子目录也可能有），
+  // 必须解析出清单且含 id:'toolbox' 条目——这是本仓库的强标记，杜绝误判锁定错误仓库根。
   const hasManifest = async (dir) => {
     try {
       const t = await fsService.resolve('plugins.json', { cwd: dir })
-      return await fsService.stat(t) ? dir.replace(/[\\/]+$/, '') : null
+      if (!await fsService.stat(t)) return null
+      const parsed = JSON.parse(await fsService.readText(t))
+      if (!parsed || !Array.isArray(parsed.plugins)) return null
+      if (!parsed.plugins.some((e) => e && e.id === 'toolbox')) return null
+      return dir.replace(/[\\/]+$/, '')
     } catch (e) { return null }
   }
   for (const root of roots) {

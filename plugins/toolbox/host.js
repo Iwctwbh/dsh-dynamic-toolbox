@@ -548,30 +548,32 @@ return {
       const reattachFailed = []
       const reattachAsync = [] // 含 Client 半的插件：重跑为异步 starting，浏览器端另行激活
       // 排除框架自身（清单 id=toolbox 对应插件）：否则 reattach 重跑框架 → 框架重启再 reattach → 无限重启循环
+      // 门控（MiMo H1）：仅当 doRebuild 成功且能从清单识别框架自身时才重挂——findManifest 失败/清单缺条目时
+      // selfPluginIds 必空、排除失效，此时整体跳过 reattach，宁可这轮不重挂也不冒重启循环风险。
       const selfPluginIds = new Set()
+      let selfName = null
       try {
         const found0 = await findManifest()
         const tbEntry = found0 && found0.manifest && Array.isArray(found0.manifest.plugins)
           ? found0.manifest.plugins.find((e) => e && e.id === 'toolbox') : undefined
-        const selfName = tbEntry && tbEntry.name
+        selfName = tbEntry && tbEntry.name
         if (selfName) {
           for (const r of runner.inventory()) {
             if (r.packages.some((p) => p && p.name === selfName)) selfPluginIds.add(r.pluginId)
           }
         }
       } catch (e) {}
-      // 保险丝（MiMo 评审 H1）：识别不出框架自身时（findManifest 失败/清单缺 toolbox 条目），
-      // selfPluginIds 为空、排除失效——此时保守排除所有含 Client 半插件（框架必含 Client 半，绝不循环；
-      // 代价仅是 selfview 这类留待心跳/手动重跑，不冒重启循环风险）
-      const selfIdSafe = selfPluginIds.size > 0
-      if (reattachAgent) {
+      const reattachEnabled = Boolean(res && res.ok && selfName && selfPluginIds.size > 0 && reattachAgent)
+      if (!reattachEnabled) {
+        console.log('toolbox: 重挂跳过（' + (!res || !res.ok ? 'doRebuild 未成功' : !selfName ? '清单无 toolbox 条目' : selfPluginIds.size === 0 ? '未识别到框架自身' : 'agent 缺失') + '），运行中工具靠心跳/手动恢复')
+      }
+      if (reattachEnabled) {
         for (const r of runner.inventory()) {
           if (stopped) break // M2：框架停止中立即中断重挂
           if (sid && r.agentId !== sid) continue
           if (!r.activeRun) continue
           const hasClient = r.packages.some((p) => p.hasClientHalf)
           if (selfPluginIds.has(r.pluginId)) continue // 框架自身绝不重挂（防重启循环）
-          if (!selfIdSafe && hasClient) continue // 识别失败时的保守兜底
           if (justDefined.has(r.pluginId)) continue
           const pkg = r.currentPackageId || r.nextPackageId
           if (!pkg) continue

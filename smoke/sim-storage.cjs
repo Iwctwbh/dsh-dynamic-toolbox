@@ -10,7 +10,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8')
 // 内存文件系统：模拟 D:\host（宿主根）+ D:\host\toolbox（本仓库，含 plugins.json）
 const HOST = 'D:/host'
 const mem = {}
-mem[HOST + '/toolbox/plugins.json'] = '{"version":2,"plugins":[]}'
+mem[HOST + '/toolbox/plugins.json'] = '{"version":2,"plugins":[{"id":"toolbox","name":"框架"}]}'
+mem[HOST + '/unrelated/plugins.json'] = '{"version":1,"plugins":[]}'  // 无 toolbox 条目的无关清单（误判防护样本）
 const fsSvc = {
   async resolve(rel, opts) {
     let p

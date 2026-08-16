@@ -406,7 +406,7 @@ return {
     const DEFAULT_CAT = {
       aiassist: 'ai', aiusage: 'ai', quota: 'ai',
       jira: 'dev', git: 'dev', files: 'dev', http: 'dev', ports: 'dev', calc: 'dev',
-      trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session', flow: 'session',
+      trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session', flow: 'session', flowedit: 'session',
       toolbox: 'system', 'theme-teal': 'system', 'theme-amber': 'system', selfview: 'system',
     }
     const CATS_LS_KEY = 'dsh.toolbox.cats'

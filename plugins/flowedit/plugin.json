@@ -1,0 +1,20 @@
+{
+  "key": "flowedit",
+  "idPrefix": "fedt",
+  "name": "工作流编辑器 (Host-only)",
+  "purpose": "Host-only：Markdown 优先的工作流编辑（参考 dsh-deepseek-flow）——## 步骤 / ### gate:ifElse 等 8 类逻辑门 / - 是→目标 分支，编辑区 ↔ 流程图实时双向预览（git 树分支样式复用 fl- 族）；文件落盘 .dsh-dynamic-toolbox/data/flows/<name>.md",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 5,
+  "autoStart": true,
+  "approval": false
+}

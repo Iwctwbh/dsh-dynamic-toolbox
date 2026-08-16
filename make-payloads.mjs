@@ -40,6 +40,11 @@ const PLUGINS = [
     purpose: 'Host-only：当前 session 实时流程图——自上而下箭头主干（用户/助手/工具组），子代理 git 树分支（├─ 支线实时展开子会话步骤 ╰─ 合并），同步普通调用平行卡片；面板带 data-autorefresh=2000，框架每 2s 静默重拉；makeSessionLogReader 按会话缓存',
     inject: ['fs', 'sessionQuery', 'timer'], impl: ['tool.js'],
     note: '与「轨迹」互补：轨迹=过滤时间线+详情，流程=形态视图；live 开关可暂停自动刷新' },
+  { key: 'flowedit', idPrefix: 'fedt', order: 5, platform: 'host-only', approval: false, autoStart: true,
+    name: '工作流编辑器 (Host-only)',
+    purpose: 'Host-only：Markdown 优先的工作流编辑（参考 dsh-deepseek-flow）——## 步骤 / ### gate:ifElse 等 8 类逻辑门 / - 是→目标 分支，编辑区 ↔ 流程图实时双向预览（git 树分支样式复用 fl- 族）；文件落盘 .dsh-dynamic-toolbox/data/flows/<name>.md',
+    inject: ['fs', 'subprocess', 'timer'], impl: ['tool.js'],
+    note: 'idPrefix：flowedit 7 个字母超限 → fedt；编辑器非运行器（画布拖拽需 Client 半，本取舍为 Markdown↔图双向）' },
   {
     key: 'theme-teal', idPrefix: 'theme', order: 5, platform: 'client-only', approval: true, autoStart: false,
     name: '工具箱主题 · 青绿（演示）',

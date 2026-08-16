@@ -1,0 +1,20 @@
+{
+  "key": "http",
+  "idPrefix": "http",
+  "name": "HTTP 接口调试工具 (Host-only)",
+  "purpose": "Host-only：Postman 风格接口调试——method 芯片 + URL + Params/Headers 键值对编辑（启用/增删）+ Body 类型（none/JSON/raw/form，自动 Content-Type）+ 响应 JSON 美化 + 历史快照重发；落盘 .dsh-dynamic-toolbox/toolbox-http.json",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 7,
+  "autoStart": true,
+  "approval": false
+}

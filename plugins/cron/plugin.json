@@ -1,0 +1,18 @@
+{
+  "key": "cron",
+  "idPrefix": "cron",
+  "name": "Cron 表达式工具 (Host-only)",
+  "purpose": "Host-only：纯 JS 5 段 cron 解析（*/,-/ + JAN-DEC/SUN-SAT 名称、周日 0/7 归一、日周 OR 语义）→ 字段明细 + 未来 8 次运行时刻（本地时区 + 相对倒计时）+ 8 个常用预设；每次动作现算无大状态",
+  "platform": "host-only",
+  "inject": [
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 26,
+  "autoStart": true,
+  "approval": false
+}

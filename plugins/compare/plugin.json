@@ -1,0 +1,21 @@
+{
+  "key": "compare",
+  "idPrefix": "cmpr",
+  "name": "多模型一问多答对比 (Host-only)",
+  "purpose": "Host-only：同一问题并发 llm.stream 打多个自选模型（provider 下拉自动载模型芯片），并排对比回答/耗时/token；最近 3 轮落盘 .dsh-dynamic-toolbox/toolbox-compare.json",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "llm",
+    "agentDefaultModel",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 18,
+  "autoStart": true,
+  "approval": false
+}

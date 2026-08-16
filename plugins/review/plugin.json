@@ -1,0 +1,21 @@
+{
+  "key": "review",
+  "idPrefix": "revw",
+  "name": "AI 代码评审 (Host-only)",
+  "purpose": "Host-only：工作区相对路径读文件（截断 20000 字符）或粘贴代码 → llm.stream 三级评审（严重/建议/可选）+ 评分；最近 5 条落盘 .dsh-dynamic-toolbox/toolbox-review.json",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "llm",
+    "agentDefaultModel",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 22,
+  "autoStart": true,
+  "approval": false
+}

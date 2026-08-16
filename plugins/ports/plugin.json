@@ -1,0 +1,20 @@
+{
+  "key": "ports",
+  "idPrefix": "ports",
+  "name": "端口进程查看工具 (Host-only)",
+  "purpose": "Host-only：node 子进程 spawnSync netstat/tasklist 列监听端口 + 进程名，过滤/刷新/两步确认 taskkill 结束进程，经工具箱 RPC 注册",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 8,
+  "autoStart": true,
+  "approval": false
+}

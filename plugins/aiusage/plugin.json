@@ -1,0 +1,20 @@
+{
+  "key": "aiusage",
+  "idPrefix": "aius",
+  "name": "AI 旁路调用台账 (Host-only)",
+  "purpose": "Host-only：读 .dsh-dynamic-toolbox/toolbox-ai-usage.json（AI 工具旁路调用台账，cap 100）——总计/今日统计 + 按工具聚合条形图 + 最近 20 条明细 + 两步确认清空；与「用量」（会话日志口径）互补",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 24,
+  "autoStart": true,
+  "approval": false
+}

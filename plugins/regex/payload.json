@@ -1,0 +1,11 @@
+{
+  "plugin": {
+    "kind": "new",
+    "idPrefix": "regex"
+  },
+  "name": "正则测试工具 (Host-only)",
+  "purpose": "Host-only：纯 JS 正则匹配测试（flags 芯片开关、匹配位置/捕获分组列表、200 条上限），经工具箱 RPC 注册",
+  "code": {
+    "host": "// ===== 二级加载桩（v5）：找到 loader.js 并委托，实现逻辑全在磁盘 =====\nconst TOOL_FILES = [\"shared/host.js\",\"plugins/regex/tool.js\"]\nreturn {\n  name: \"正则测试工具 (Host-only)\",\n  inject: [\"fs\",\"timer\"],\n  async apply(ctx) {\n    const fs = ctx.get('fs')\n    if (!fs) throw new Error('stub: fs 服务不可用')\n    const roots = []\n    const sp = ctx.get('sandboxPolicy')\n    if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)\n    const ss = ctx.get('sessions')\n    if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }\n    const tried = []\n    for (const root of roots) {\n      try {\n        const t = await fs.resolve(\"\" + 'loader.js', { cwd: root })\n        if (!await fs.stat(t)) { tried.push(root + ': loader.js 不存在'); continue }\n        const fn = new Function('ctx', 'harness', 'console', 'IMPL_FILES', 'usedRoot', 'return (async () => {\\n' + await fs.readText(t) + '\\n})()')\n        return await fn(ctx, typeof harness === 'undefined' ? undefined : harness, console, TOOL_FILES, root)\n      } catch (e) { tried.push(root + ': ' + String((e && e.message) || e)) }\n    }\n    throw new Error('stub: 无法加载 loader.js（尝试根: ' + (roots.join(', ') || '(无)') + (tried.length ? '；明细: ' + tried.join(' | ') : '') + '）')\n  },\n}\n"
+  }
+}

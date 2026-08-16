@@ -1,0 +1,21 @@
+{
+  "key": "tools",
+  "idPrefix": "tools",
+  "name": "可用工具清单 (Host-only)",
+  "purpose": "Host-only：tools.schemas（空则退回 systemPrompt 装配）模型可见工具清单，搜索过滤 + 完整参数 schema 展开",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "tools",
+    "systemPrompt",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 15,
+  "autoStart": true,
+  "approval": false
+}

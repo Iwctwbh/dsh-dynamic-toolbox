@@ -1,0 +1,11 @@
+{
+  "plugin": {
+    "kind": "new",
+    "idPrefix": "http"
+  },
+  "name": "HTTP 接口调试工具 (Host-only)",
+  "purpose": "Host-only：Postman 风格接口调试——method 芯片 + URL + Params/Headers 键值对编辑（启用/增删）+ Body 类型（none/JSON/raw/form，自动 Content-Type）+ 响应 JSON 美化 + 历史快照重发；落盘 .dsh-dynamic-toolbox/toolbox-http.json",
+  "code": {
+    "host": "// ===== 二级加载桩（v5）：找到 loader.js 并委托，实现逻辑全在磁盘 =====\nconst TOOL_FILES = [\"shared/host.js\",\"plugins/http/tool.js\"]\nreturn {\n  name: \"HTTP 接口调试工具 (Host-only)\",\n  inject: [\"fs\",\"subprocess\",\"timer\"],\n  async apply(ctx) {\n    const fs = ctx.get('fs')\n    if (!fs) throw new Error('stub: fs 服务不可用')\n    const roots = []\n    const sp = ctx.get('sandboxPolicy')\n    if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) roots.push(sp.workspaceRoot)\n    const ss = ctx.get('sessions')\n    if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && roots.indexOf(c) < 0) roots.push(c) } } catch (e) {} }\n    const tried = []\n    for (const root of roots) {\n      try {\n        const t = await fs.resolve(\"\" + 'loader.js', { cwd: root })\n        if (!await fs.stat(t)) { tried.push(root + ': loader.js 不存在'); continue }\n        const fn = new Function('ctx', 'harness', 'console', 'IMPL_FILES', 'usedRoot', 'return (async () => {\\n' + await fs.readText(t) + '\\n})()')\n        return await fn(ctx, typeof harness === 'undefined' ? undefined : harness, console, TOOL_FILES, root)\n      } catch (e) { tried.push(root + ': ' + String((e && e.message) || e)) }\n    }\n    throw new Error('stub: 无法加载 loader.js（尝试根: ' + (roots.join(', ') || '(无)') + (tried.length ? '；明细: ' + tried.join(' | ') : '') + '）')\n  },\n}\n"
+  }
+}

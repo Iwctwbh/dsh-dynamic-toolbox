@@ -1,0 +1,20 @@
+{
+  "key": "search",
+  "idPrefix": "search",
+  "name": "会话全文搜索 (Host-only)",
+  "purpose": "Host-only：sessionQuery.searchEvents 当前会话全文检索（snippet 命中列表 + readEvent 原文定位），与结构化轨迹互补；回车即搜",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "sessionQuery",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 16,
+  "autoStart": true,
+  "approval": false
+}

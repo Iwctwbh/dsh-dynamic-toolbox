@@ -1,0 +1,21 @@
+{
+  "key": "translate",
+  "idPrefix": "trsl",
+  "name": "AI 翻译工具 (Host-only)",
+  "purpose": "Host-only：llm.stream 旁路翻译（8 种目标语言，保留 Markdown/代码格式），共享 makeLlmHelper 路由；最近 10 条落盘 .dsh-dynamic-toolbox/toolbox-translate.json",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "llm",
+    "agentDefaultModel",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 19,
+  "autoStart": true,
+  "approval": false
+}

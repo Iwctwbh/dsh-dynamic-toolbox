@@ -1,0 +1,14 @@
+{
+  "key": "theme-teal",
+  "idPrefix": "theme",
+  "name": "工具箱主题 · 青绿（演示）",
+  "purpose": "工具箱面板主题插件（演示）：在 :root 声明 --tb-* 变量覆盖，把共享设计系统的 accent 从蓝色换成青绿；停止即回默认主题，用于验证\"多主题插件按需激活\"机制",
+  "platform": "client-only",
+  "inject": [],
+  "impl": [],
+  "client": "client.js",
+  "shared": true,
+  "order": 5,
+  "autoStart": false,
+  "approval": true
+}

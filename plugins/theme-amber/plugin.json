@@ -1,0 +1,14 @@
+{
+  "key": "theme-amber",
+  "idPrefix": "theme",
+  "name": "工具箱主题 · 暖橙",
+  "purpose": "工具箱面板主题插件：:root 声明 --tb-* 覆盖（accent + active 家族），整体换成暖橙；停止即回默认主题；与青绿演示互斥，按需只激活一个",
+  "platform": "client-only",
+  "inject": [],
+  "impl": [],
+  "client": "client.js",
+  "shared": true,
+  "order": 27,
+  "autoStart": false,
+  "approval": true
+}

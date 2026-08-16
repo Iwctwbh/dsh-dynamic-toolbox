@@ -1,0 +1,20 @@
+{
+  "key": "trace",
+  "idPrefix": "trace",
+  "name": "会话轨迹工具 (Host-only)",
+  "purpose": "Host-only：sessionQuery 读当前会话日志（makeSessionLogReader 缓存），技能/插件/MCP/子代理/命令(pwsh/bash/终端，默认勾选)/内置 多选过滤时间线 + 点击条目完整输入输出；固定头 + 时间线独立滚动（column-reverse 最新在底）",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "sessionQuery",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 6,
+  "autoStart": true,
+  "approval": false
+}

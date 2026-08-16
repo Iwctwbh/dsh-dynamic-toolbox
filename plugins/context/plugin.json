@@ -1,0 +1,21 @@
+{
+  "key": "context",
+  "idPrefix": "contx",
+  "name": "当前上下文窗口查看 (Host-only)",
+  "purpose": "Host-only：sessionQuery.readSurface 当前模型可见上下文条目 + tokenMeter 逐条 token 估算，点击展开完整内容；固定头 + 列表独立滚动",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "sessionQuery",
+    "tokenMeter",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 13,
+  "autoStart": true,
+  "approval": false
+}

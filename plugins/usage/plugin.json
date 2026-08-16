@@ -1,0 +1,20 @@
+{
+  "key": "usage",
+  "idPrefix": "usage",
+  "name": "会话 Token 用量分析 (Host-only)",
+  "purpose": "Host-only：当前会话 assistant/message usage 汇总（总输入/输出/缓存命中率/平均每步）+ Top10 步骤条形图 + 最近 20 步明细；makeSessionLogReader 缓存",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "sessionQuery",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 11,
+  "autoStart": true,
+  "approval": false
+}

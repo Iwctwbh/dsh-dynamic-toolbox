@@ -1,0 +1,21 @@
+{
+  "key": "jira",
+  "idPrefix": "jira",
+  "name": "Jira 需求读取与归档工具 (Host-only)",
+  "purpose": "Host-only：Jira 查询/附件归档/记录管理动作机 + HTML 面板渲染，凭据走 credentials 服务、HTTP 走 node 子进程，经工具箱 RPC 注册；记录落盘 .dsh-dynamic-toolbox/jira-watch.json",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "credentials",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 2,
+  "autoStart": true,
+  "approval": false
+}

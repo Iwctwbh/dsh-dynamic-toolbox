@@ -1,0 +1,20 @@
+{
+  "key": "gen",
+  "idPrefix": "gen",
+  "name": "生成器 (Host-only)",
+  "purpose": "Host-only：UUID v4 批量（≤200）/ CSPRNG 随机串（hex/base64url/字母数字/纯数字/易读集，crypto.randomInt 无偏，≤4096 字符 ×≤50 条）/ 哈希摘要（MD5/SHA-1/SHA-256/SHA-512）；node 子进程真 crypto（求值器无 Buffer、Math.random 非 CSPRNG）；条目点击复制/复制全部",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "subprocess",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 28,
+  "autoStart": true,
+  "approval": false
+}

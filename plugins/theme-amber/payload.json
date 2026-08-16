@@ -1,0 +1,11 @@
+{
+  "plugin": {
+    "kind": "new",
+    "idPrefix": "theme"
+  },
+  "name": "工具箱主题 · 暖橙",
+  "purpose": "工具箱面板主题插件：:root 声明 --tb-* 覆盖（accent + active 家族），整体换成暖橙；停止即回默认主题；与青绿演示互斥，按需只激活一个",
+  "code": {
+    "client": "// ===== 工具箱主题插件 · 暖橙 =====\n// 原理同 theme-teal：框架共享设计系统只以 var(--tb-*, 兜底) 消费变量、从不声明；\n// 在 :root 声明覆盖即整体换肤，停止本插件即回默认主题。多主题并存后插入者胜出——按需只激活一个。\n// 与 teal 的差异：除 accent 家族外同步覆盖 active 家族（Tab 激活态/链接色）与统计数字色，观感更完整。\n\nreturn {\n  name: 'tb-theme-amber',\n  apply(ctx) {\n    const dispose = styles.insert([\n      ':root{',\n      '  --tb-accent:#d97706;',\n      '  --tb-accent-hover:#f59e0b;',\n      '  --tb-accent-text:#fbbf24;',\n      '  --tb-accent-bg:rgba(245,158,11,.14);',\n      '  --tb-accent-border:rgba(245,158,11,.45);',\n      '  --tb-accent-ring:rgba(245,158,11,.16);',\n      '  --tb-active:#f59e0b;',\n      '  --tb-active-text:#fbbf24;',\n      '  --tb-active-border:rgba(245,158,11,.4);',\n      '  --tb-active-bg:rgba(245,158,11,.12);',\n      '}',\n    ].join('\\n'))\n    ctx.effect(() => dispose)\n    console.log('tb-theme-amber: 已应用（工具箱面板 accent → 暖橙）')\n  },\n}\n"
+  }
+}

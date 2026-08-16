@@ -1,0 +1,20 @@
+{
+  "key": "prompt",
+  "idPrefix": "prompt",
+  "name": "系统提示词装配查看 (Host-only)",
+  "purpose": "Host-only：systemPrompt.assemble 全局装配的 sections/contexts/tools/variables 清单，点击展开完整文本；固定头 + 列表独立滚动",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "systemPrompt",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 12,
+  "autoStart": true,
+  "approval": false
+}

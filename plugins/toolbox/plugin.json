@@ -1,0 +1,18 @@
+{
+  "key": "toolbox",
+  "idPrefix": "tbx",
+  "name": "工具箱框架 (Host 注册表 + Client 面板壳)",
+  "purpose": "工具箱框架：Host 半维护工具注册表并提供 toolbox/tools、toolbox/panel RPC；Client 半提供抽屉 + Tab 栏 + 通用 HTML 面板壳（唯一需要浏览器批准的新架构插件）",
+  "platform": "host+client",
+  "inject": [
+    "fs"
+  ],
+  "impl": [
+    "host.js"
+  ],
+  "client": "client.js",
+  "shared": false,
+  "order": 1,
+  "autoStart": true,
+  "approval": true
+}

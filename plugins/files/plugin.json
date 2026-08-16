@@ -1,0 +1,19 @@
+{
+  "key": "files",
+  "idPrefix": "files",
+  "name": "工作区文件工具 (Host-only)",
+  "purpose": "Host-only：fs 服务列目录 + 文件夹树 HTML 渲染（展开/折叠/刷新），经工具箱 RPC 注册",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 4,
+  "autoStart": true,
+  "approval": false
+}

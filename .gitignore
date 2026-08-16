@@ -1,0 +1,13 @@
+# 工具箱运行状态 + 内容产物（Jira 查询记录、AI 台账、启停记忆、自动补齐报告、工单归档附件等，勿入库）
+.dsh-dynamic-toolbox/
+# 开发草稿/一次性脚本临时目录（正式资产在 smoke/）
+.scratch/
+# 凭据文件（Jira 凭据来源之一是项目 .env，绝不入库）
+.env
+.env.*
+# 依赖目录（本仓库零 npm 依赖；防止本地试验误入库）
+node_modules/
+# 系统/编辑器杂项
+Thumbs.db
+Desktop.ini
+*.log

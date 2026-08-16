@@ -1,0 +1,20 @@
+{
+  "key": "lineage",
+  "idPrefix": "line",
+  "name": "会话血缘树 (Host-only)",
+  "purpose": "Host-only：sessionQuery.traceSession 祖先链 + 子代理后代树（递归缩进），live/persisted/subagent 徽章，断链提示",
+  "platform": "host-only",
+  "inject": [
+    "fs",
+    "sessionQuery",
+    "timer"
+  ],
+  "impl": [
+    "tool.js"
+  ],
+  "client": null,
+  "shared": true,
+  "order": 17,
+  "autoStart": true,
+  "approval": false
+}

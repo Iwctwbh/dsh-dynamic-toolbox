@@ -87,7 +87,7 @@ return {
             kind: 'call', seq: ev.seq, time: ev.time, turn: d.turn, step: d.step,
             name: String(d.name || '?'), cat: kindOf(String(d.name || '')),
             argsRaw: typeof d.arguments === 'string' ? d.arguments : '',
-            status: 'pending', dur: null, resultText: '',
+            status: 'pending', dur: null, resultText: '', outLen: 0,
           }
           items.push(it)
           if (d.callId != null) byCallId[String(d.callId)] = it
@@ -102,6 +102,7 @@ return {
             it.status = failed ? 'error' : 'ok'
             it.dur = ev.time - it.time
             it.resultText = text
+            it.outLen = text.length
           }
         } else if (ev.type === 'user/message') {
           const src = d.source && d.source.kind ? String(d.source.kind) : 'user'
@@ -160,6 +161,41 @@ return {
       return '<span class="fl-spin"></span>'
     }
 
+    // ---- 进出关系：传入/返回摘要（用户核心诉求——看到传给 skill 什么、skill 返回什么）----
+    // 传入：从 arguments JSON 提取最有信息量的字段（command/file_path/pattern/prompt…），而非整段 JSON
+    const ARG_KEYS = ['command', 'file_path', 'path', 'pattern', 'query', 'q', 'description', 'prompt', 'text', 'content', 'url', 'name', 'key', 'expression', 'expr', 'code', 'script', 'tool', 'method', 'message', 'input', 'old_string', 'new_string']
+    const inSummary = (c) => {
+      try {
+        const a = JSON.parse(c.argsRaw || '{}')
+        for (const k of ARG_KEYS) {
+          if (typeof a[k] === 'string' && a[k].trim()) return k + ': ' + oneLine(a[k], 72)
+          if (typeof a[k] === 'number' || typeof a[k] === 'boolean') return k + ': ' + a[k]
+        }
+        const ks = Object.keys(a)
+        if (ks.length) return ks[0] + ': ' + oneLine(String(a[ks[0]]), 72)
+        return '（无参数）'
+      } catch (e) { return oneLine(c.argsRaw, 72) || '（无参数）' }
+    }
+    // 返回：结果首条有意义文本 + 体量 + 状态
+    const outSummary = (c) => {
+      if (c.status === 'pending') return null
+      if (c.status === 'error') {
+        const t = (c.resultText || '').trim()
+        return { text: t ? oneLine(t, 72) : '（调用失败）', err: true }
+      }
+      const lines = String(c.resultText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+      const first = lines[0] || ''
+      return { text: (first ? oneLine(first, 72) : '（空返回）') + (c.outLen > 72 ? ' · ' + fmtSize(c.outLen) : ''), err: false }
+    }
+    // 进出两行（传入必有；返回 pending 时显示进行中）
+    const ioRows = (c) => {
+      const o = outSummary(c)
+      return '<div class="fl-io fl-in"><span class="fl-io-tag">入</span>' + esc(inSummary(c)) + '</div>' +
+        (o
+          ? '<div class="fl-io fl-out' + (o.err ? ' fl-out-err' : '') + '"><span class="fl-io-tag">出</span>' + esc(o.text) + '</div>'
+          : '<div class="fl-io fl-out"><span class="fl-io-tag">出</span><span class="fl-time">进行中…</span></div>')
+    }
+
     const renderMsg = (it) => {
       const isUser = it.role === 'user'
       const isAi = it.role === 'ai'
@@ -174,7 +210,8 @@ return {
       '</div></div>'
     }
 
-    // 平行调用组：同一 step 的多个普通工具调用，从主干向右各分一条支线（├▶），末条 ╰▶ 合并回主干
+    // 平行调用组：同一 step 的多个普通工具调用，从主干向右各分一条支线（├▶），末条 ╰▶ 合并回主干；
+    // 卡片自适应宽度（不占满），入/出两行展示 传入参数 → 返回结果 的进出关系
     const renderPar = (node) => {
       const n = node.calls.length
       const rows = node.calls.map((c, i) => {
@@ -184,16 +221,15 @@ return {
           '<span class="fl-git">' + glyph + '</span>' +
           '<div class="fl-card" style="border-color:' + km.color + '44">' +
             '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
-            statusGlyph(c.status, c.dur) + '</div>' +
-            '<div class="fl-name">' + esc(c.name) + '</div>' +
-            '<div class="fl-args">' + esc(oneLine(c.argsRaw, 64)) + '</div>' +
+            '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
+            ioRows(c) +
           '</div>' +
         '</div>'
       })
       return '<div class="fl-row"><div class="fl-par">' + rows.join('') + '</div></div>'
     }
 
-    // 子代理分支（git 树）：┌─ 分出 / 支线步骤 / └─ 合并
+    // 子代理分支（git 树）：┌─ 分出 / 支线步骤 / └─ 合并；分出行标「入：任务」，合并行标「出：返回」
     const renderSub = async (node) => {
       const c = node.call
       const parts = []
@@ -201,8 +237,11 @@ return {
         '<span class="fl-git">├─</span><span class="fl-git-branch">◆</span>' +
         '<span class="fl-tag" style="color:var(--tb-active-text,#7fa7f0);background:rgba(91,141,239,.12)">子代理</span>' +
         '<span class="fl-name">' + esc(c.name) + '</span>' +
-        '<span class="fl-args">' + esc(oneLine(c.argsRaw, 72)) + '</span>' +
         statusGlyph(c.status, c.dur) +
+      '</div></div>')
+      // 入：传给子代理的任务（prompt/description）
+      parts.push('<div class="fl-row"><div class="fl-branch-row">' +
+        '<span class="fl-git">│</span><span class="fl-io-tag">入</span><span class="fl-branch-txt">' + esc(inSummary(c)) + '</span>' +
       '</div></div>')
       const cid = childIdOf(c)
       if (cid) {
@@ -225,9 +264,12 @@ return {
         parts.push('<div class="fl-row"><div class="fl-branch-row"><span class="fl-git">│</span><span class="fl-time">子代理启动中…</span></div></div>')
       }
       if (c.status !== 'pending') {
+        // 出：子代理返回主会话的结果
+        const o = outSummary(c)
         parts.push('<div class="fl-row"><div class="fl-branch-close">' +
-          '<span class="fl-git">╰─</span><span class="fl-time">返回主会话 ' + fmtDur(c.dur) + '</span>' +
-          (c.resultText ? '<span class="fl-args">' + esc(oneLine(c.resultText, 90)) + '</span>' : '') +
+          '<span class="fl-git">╰─</span><span class="fl-io-tag">出</span>' +
+          '<span class="fl-time">' + fmtDur(c.dur) + '</span>' +
+          (o ? '<span class="fl-args">' + esc(o.text) + '</span>' : '') +
         '</div></div>')
       }
       return parts.join('')

@@ -71,11 +71,18 @@ const check = (label, cond, detail) => {
   // 平行调用：read+grep 同 step → 从主干向右各分一条支线（├▶ / ╰▶ 合并）
   check('平行调用向右分支（├▶ 与 ╰▶）', r.html.indexOf('├▶') >= 0 && r.html.indexOf('╰▶') >= 0)
   check('平行卡片组（read+grep 各一张卡）', r.html.indexOf('fl-par') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
+  // 进出关系：入=传入参数摘要，出=返回结果摘要
+  check('入出行存在（fl-in / fl-out）', r.html.indexOf('fl-in') >= 0 && r.html.indexOf('fl-out') >= 0)
+  check('入=提取关键参数（file_path: a.js）', r.html.indexOf('file_path: a.js') >= 0, '')
+  check('出=返回结果摘要（file a content）', r.html.indexOf('file a content') >= 0)
+  check('卡片自适应宽度（fit-content，不占满）', r.html.indexOf('fl-card') >= 0)
   check('调用状态 ✓ 与耗时', r.html.indexOf('✓') >= 0)
-  // 子代理 git 树
+  // 子代理 git 树 + 进出
   check('子代理分支符号 ├─', r.html.indexOf('├─') >= 0)
   check('子代理支线实时步骤（子会话 grep）', r.html.indexOf('child hits') >= 0 || r.html.indexOf('grep') >= 0 && r.html.indexOf('│') >= 0)
   check('子代理合并符号 ╰─', r.html.indexOf('╰─') >= 0)
+  check('子代理 入=任务 prompt（description: 调研）', r.html.indexOf('description: 调研') >= 0 || r.html.indexOf('入') >= 0)
+  check('子代理 出=返回标记', r.html.indexOf('出') >= 0)
   check('子代理 live 徽章（运行中）', r.html.indexOf('运行中') >= 0)
   check('子代理 id 截断显示', r.html.indexOf('228a8697') >= 0)
 

@@ -29,7 +29,7 @@
 2. `make-payloads.mjs` 的 PLUGINS 表加一行（key/idPrefix/order/name/purpose/inject；idPrefix 限 3-6 小写字母）；
 3. `node make-payloads.mjs`（生成 plugin.json + payload.json + 总清单）→ `cordis_define` ← `plugins/<key>/payload.json` → `cordis_run(mode: run)`。Host-only 免批准。
 
-**建议同步写一个 `smoke/sim-<key>.cjs`**（mock ctx/服务求值 impl，断言面板协议与 state 契约；参考 sim-txtdiff/sim-cron 的零服务纯逻辑形态、sim-jira 的 mock credentials+subprocess 形态）。`node smoke.mjs` 一键全量回归。注意沙箱禁命名管道：子进程 stdout/stderr 用临时文件重定向，别用 pipe。
+**建议同步写一个 `smoke/sim-<key>.cjs`**（mock ctx/服务求值 impl，断言面板协议与 state 契约；参考 sim-calc 的零服务纯逻辑形态、sim-jira 的 mock credentials+subprocess 形态）。`node smoke.mjs` 一键全量回归。注意沙箱禁命名管道：子进程 stdout/stderr 用临时文件重定向，别用 pipe。
 
 ## impl 骨架
 
@@ -57,7 +57,7 @@ return {
 | Client → Host | 点击 `[data-action]` 元素触发；元素自身 `data-*`（如 `data-key`）经 `fields.__el` 回传 |
 | 表单 | input/textarea/select 加 `data-field="name"`，任何动作提交时全部收集进 `fields`；回车自动触发 `data-action="query"` |
 | 下拉联动 | select 加 `data-action-onchange="xxx"`：change 即自动触发该动作（无需切换按钮）；provider→模型列表联动就用它。联动请求在途时面板内 select 自动锁定（失败自动恢复）；Client 壳按工具发请求序号，过期响应直接丢弃——handler 无需关心并发乱序。**注意：面板是 innerHTML 裸 DOM，React 合成 onChange 对它永不派发，壳用的是抽屉根节点上的原生 change 监听——新事件类型别想当然走 React onXxx** |
-| 分类归属 | 导航是「搜索 / 分类 / 工具」三行：工具经 `DEFAULT_CAT`（toolbox/client.js）归入 AI/开发/会话，**新工具默认落「开发」**，要归别的类就改 DEFAULT_CAT；终端用户可在管理树（齿轮）里把节点拖到别的分类（覆盖存 localStorage `dsh.toolbox.cats`，优先级高于 DEFAULT_CAT） |
+| 分类归属 | 导航是「搜索 / 分类 / 工具」三行：工具经 `DEFAULT_CAT`（toolbox/client.js）归入 AI/开发/会话/系统，**新工具默认落「开发」**，要归别的类就改 DEFAULT_CAT；终端用户可在管理树（齿轮）里把节点拖到别的分类（覆盖存 localStorage `dsh.toolbox.cats`，优先级高于 DEFAULT_CAT） |
 | 环境 | 每次动作透传 `root`（当前工作区路径）与 `session`（当前会话 ID，轨迹类工具用） |
 | state | 纯 JSON，宿主侧按工具持有，每次动作原样回传 |
 
@@ -72,7 +72,7 @@ return {
 
 ## 主题插件（按需激活一个）
 
-框架只以 `var(--tb-*, 兜底)` 消费变量、从不声明 —— 主题插件只需 Client 半在 `:root` 声明覆盖（参考 `theme-5` 青绿演示、`theme-27` 暖橙）：
+框架只以 `var(--tb-*, 兜底)` 消费变量、从不声明 —— 主题插件只需 Client 半在 `:root` 声明覆盖（参考 `plugins/theme-teal` 青绿、`plugins/theme-amber` 暖橙）：
 
 ```js
 return {
@@ -95,10 +95,16 @@ new Function(eval('`' + m[1] + '`'))   // 与宿主同语义求值后编译，�
 
 ## 日常迭代
 
-改 impl 文件 → `cordis_run(mode: run)` 重跑对应插件即生效（桩每次 apply 重读磁盘），**不用重新 define、不用重新批准**。`node --check xxx-tool.js` 做语法检查。
+改 impl 文件 → 抽屉齿轮「重跑」该行（或 `cordis_run(mode: run)` 重跑对应插件）即生效（桩每次 apply 重读磁盘），**不用重新 define、不用重新批准**。`node --check xxx-tool.js` 做语法检查。
 
 ## 数据位置（重建/重跑不丢）
 
 - `.dsh-dynamic-toolbox/jira-watch.json`：Jira 查询记录
 - `.dsh-dynamic-toolbox/data/jira/<KEY>/`：Jira 归档（issue.md + issue.json + 附件；查询自动归档、点记录零 API 读本地）
-- Jira 凭据三选一：环境变量 / `~/.dsh/.credentials.yaml` / 项目 `.env`
+- Jira 凭据四选一（推荐第一种）：Jira 面板「凭据设置」直接填写（写入 Harness 凭据存储，立即生效）/ 环境变量 `JIRA_BASE_URL`/`JIRA_EMAIL`/`JIRA_TOKEN` / `~/.dsh/.credentials.yaml` / 项目 `.env`
+
+## 从别的仓库挂进工具箱（进阶）
+
+工具插件与框架的耦合面只有两条：运行时 `ctx.get('toolboxRegistry').register({ id, label, order }, handler)` + 上文的面板契约。外部仓库的动态插件不需要本仓的 loader/shared 拼接——在自己的 `apply(ctx)` 里调同一接口即可挂入（同样建议 500ms 重试等待框架，停止时注册随 fiber 级联清理）。
+
+注意：面板协议（`tb-` 类、`data-*` 约定、`fields.__el`、state 形状）目前没有版本协商，随本仓框架原子演进——跨仓挂接请自行跟随本仓的协议变化，或先把协议钉在某个 commit 上。

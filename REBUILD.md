@@ -6,6 +6,39 @@
 > 无框架时的手动路径：读 `plugins.json` → 按 order 逐个取条目 `payload.json`（即完整 define 参数）→ `cordis_define` → autoStart 的 `cordis_run`。
 > 写新工具插件 → 见 `PLUGIN-DEV.md`。
 
+## 零模型调用自举（host-bootstrap，可选加速器）
+
+一次性把静态 bootstrapper 装进 DSH 用户 profile 后，**任何模式下打开会话即自动 define+run 框架**——批准卡自动弹出，点一次允许完成重建，全程 0 模型调用、不用切创造模式、不用找 AI。框架启动后的 doRebuild 自动补齐与启停记忆完全照旧。纯可选：不装它，上面的手动/模型工具路径不受任何影响。
+
+### 挂载（每台机器一次）
+
+```text
+pwsh <仓库根>\host-bootstrap\install.ps1     # 幂等，重复跑无副作用；卸载加 -Uninstall
+# 可选参数：-DshHome <路径>（默认 $env:DSH_HOME 或 ~\.dsh）、-Profile <名>（默认 web）
+# 然后重启 DSH 进程（静态 composition 在进程启动时加载）
+```
+
+脚本等价的手动步骤（排错参考）：① 在 `<DSH_HOME>\profiles\web\node_modules\` 建 junction `dsh-toolbox-bootstrap` → `<仓库根>\host-bootstrap`；② 向 `<DSH_HOME>\profiles\web\cordis.patch.yml`（DSH 官方用户 patch 层）写入 `- insert:` → `{ id: toolbox-bootstrap, name: 'dsh-toolbox-bootstrap' }`。
+
+### 行为
+
+- 监听 `agent/session-start`：会话 cwd（或其一级子目录）含 `plugins.json` 标记才动作，其他项目无感
+- **首次询问**：第一次在某仓库触发时弹询问卡（自动重建并记住 / 仅本次 / 别再问），选择落盘 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`（`{"auto":"always"|"never"}`，gitignored）；**问不了（无 UI provider / 120s 超时）默认自举**，只有主动取消询问才跳过本轮
+- 只服务根会话：子代理/工作流子会话直接跳过（不会给每个 subagent 弹卡）
+- 幂等：本会话已定义同名框架插件（含被停掉的）→ 跳过；启停交给抽屉齿轮/Cordis 面板
+- 尊重启停记忆：`toolbox-plugins.json` 里 toolbox 记录为 `enabled=false` → 本轮不自举
+- define 的 sessionId 就是当前会话：插件会话归属、批准闸门与模型工具路径完全同构；bootstrapper 只是替你在会话启动时按了 cordis_define + cordis_run
+- 实现即仓库内 `host-bootstrap/`（约 160 行，只消费 dynamicCordisRunner/fs/agents/userQuestions/timer，不发布服务）；profile 里用 junction 指回仓库，代码随仓库版本管理
+- headless/无 GUI 会话：无法询问 → 默认自举，批准卡挂起无害（有页面接入后弹出）；不想被打扰写 `{"auto":"never"}` 或把 toolbox 启停记忆置 false
+
+### 配合：重建全程只剩一张批准卡
+
+selfview 是除框架外唯一含 Client 半的 autoStart 条目，自动启动时每进程会再弹一张批准卡（浏览器代码执行的安全闸门）。不想弹第二张：启停记忆预置 `selfview: enabled=false`（doRebuild 对它只 define 不启动，需要时 Cordis 面板一键启、走面板手势不再弹卡）；要变成仓库级默认则改 `make-payloads.mjs` PLUGINS 表 selfview 的 `autoStart: false` → `node make-payloads.mjs` 重新生成。
+
+### 卸载
+
+`pwsh host-bootstrap/install.ps1 -Uninstall`（或手动删 `cordis.patch.yml` 的 insert 行 + 删 junction），即回到零安装状态。
+
 ## 目录结构（文件夹即插件）
 
 ```
@@ -15,6 +48,7 @@ smoke.mjs               契约冒烟入口：node smoke.mjs 跑 smoke/sim-*.cjs 
 smoke/                  仿真用例：mock ctx/服务真实求值插件 impl（面板协议/联动竞态/持久化/state 轻量化/主题生命周期）
 loader.js               磁盘级加载器（桩固定入口，改它不用重新 define）
 shared/host.js          共享辅助（esc/注册重试/持久化/日志缓存/base64）
+host-bootstrap/         可选加速器：静态自举插件（装进 DSH profile 后开会话即自动重建，见上节）
 plugins/<key>/          每插件一个文件夹：plugin.json（元数据）+ payload.json（生成）+ impl
   toolbox/                框架：host.js（注册表+RPC+启停记忆+并行自举+重启确定性重挂）+ client.js（抽屉壳+tb- 设计系统+面板自动刷新）
   theme-teal/             主题：client.js（payload 由它内联生成）

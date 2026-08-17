@@ -1,6 +1,6 @@
 # 工具箱 — 重建指南（v6 文件夹结构 + v5 二级加载 + 框架自举）
 
-> **前置：会话须处于「创造模式」**（cordis preset，GUI 顶部模式选择器）——只有它挂载 `cordis_define` / `cordis_run` 工具，其他模式无法发起重建。
+> **前置分阶段**：**首次自举**（define+run 框架）须处于「创造模式」（cordis preset，GUI 顶部模式选择器）——只有它挂载 `cordis_define` / `cordis_run` 模型工具；**框架已在跑之后**，本页的重建/补齐/重跑/启停在**任何模式**都能进行——抽屉管理按钮与 Cordis 面板直驱进程级全局 `dynamicCordisRunner`，不经过模型工具（动态插件运行时 cordis-host/client-runner 与 ui-cordis 均在 Host composition 全局挂载，与 preset 无关；插件归属 session 级）。
 > **最快重建 = define+run 框架一个插件（2 次调用 + 1 次 GUI 批准），零点击。** 框架启动时自动补齐（`doRebuild`，幂等按插件 name 跳过本会话已定义的，含被开关停掉的）：读磁盘 `plugins.json` + `payload.json` 经 `dynamicCordisRunner` **并行** define+run，只补缺失（**实测全量冷重建 22 插件 ≈ 0.3s**，含耗时字段 `ms` 于自动补齐报告）；启动与否遵循**启停记忆**（见下）。sid 发现：`agents.currentInitiator()` 优先，兜底按 toolbox 条目 name 在 inventory 里匹配（多会话同名框架时跳过，不误补别的会话）。抽屉齿轮「从 plugins.json 重建/补齐」按钮仍可手动触发同一逻辑。
 > **启停记忆（配置文件）**：`<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json`（`{ plugins: { <条目id>: { enabled, at } } }`）。齿轮开关每次真停/真启自动落盘；重建时有记录且 `enabled=false` 的条目**只 define 不启动**（恢复上次记录），无记录条目按 `plugins.json` 的 `autoStart` 默认。可手改该文件预设下次重建的默认启停。
 > 无框架时的手动路径：读 `plugins.json` → 按 order 逐个取条目 `payload.json`（即完整 define 参数）→ `cordis_define` → autoStart 的 `cordis_run`。

@@ -64,7 +64,11 @@ return {
     }
 
     const pad2 = (n) => (n < 10 ? '0' : '') + n
-    const fmtTime = (t) => { const d = new Date(t); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) }
+    const fmtTime = (t) => {
+      const d = new Date(t)
+      if (isNaN(d.getTime())) return '' // 注入类事件可能缺 time 字段，防空值渲染出 NaN:NaN:NaN
+      return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
+    }
     const fmtDur = (ms) => ms == null ? '' : (ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's')
     const oneLine = (s, max) => {
       const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
@@ -109,10 +113,14 @@ return {
             it.dur = ev.time - it.time
             it.resultText = text
             it.outLen = text.length
+            it.resSeq = ev.seq // 结果事件位置：子代理出口卡对齐「结果之后的第一条消息」用
           }
         } else if (ev.type === 'user/message') {
           const src = d.source && d.source.kind ? String(d.source.kind) : 'user'
-          items.push({ kind: 'msg', role: src === 'user' ? 'user' : 'inject', seq: ev.seq, time: ev.time, preview: oneLine(textOf(d.content), 110) })
+          const preview = oneLine(textOf(d.content), 110)
+          // 空内容的上下文注入（subagent-settled 占位等）是噪声，不进流程图
+          if (src !== 'user' && !preview) continue
+          items.push({ kind: 'msg', role: src === 'user' ? 'user' : 'inject', seq: ev.seq, time: ev.time, preview })
         } else if (ev.type === 'assistant/message') {
           const m = d.message || {}
           const u = d.usage || null
@@ -245,7 +253,7 @@ return {
       // 卡片统一面片底色（fl-node），角色色只落在左侧色条 + 几何符号/tag 上，避免整卡彩色半透明的杂乱感
       return '<div class="fl-node" style="border-left-color:' + color + '">' +
         '<div class="fl-node-head"><span class="fl-glyph" style="color:' + color + '">' + (isUser ? '▲' : isAi ? '◆' : '■') + '</span><span class="fl-tag" style="color:' + color + '">' + label + '</span>' +
-        '<span class="fl-time">' + fmtTime(it.time) + '</span>' +
+        (fmtTime(it.time) ? '<span class="fl-time">' + fmtTime(it.time) + '</span>' : '') +
         (it.tok ? '<span class="fl-time">+' + it.tok + ' tok</span>' : '') + '</div>' +
         '<div class="fl-preview">' + esc(it.preview || '（空）') + '</div>' +
       '</div>'
@@ -346,13 +354,24 @@ return {
             h = renderCallBlock(n.it, shown[i + 1], st.expanded)
             i++
           } else if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'sub') {
-            // 助手消息紧跟子代理 → 合并为分支块：左列=入口卡+支线+出口卡，中列=助手卡 ▼ 下一条消息卡（主干连续不留空白行）
+            // 助手消息紧跟子代理 → 合并为分支块：左列=入口/支线/出口，中列=主干消息串
             const subN = shown[i + 1]
-            const nextMsg = shown[i + 2] && shown[i + 2].t === 'msg' ? shown[i + 2] : null
+            const call = subN.call
             let main = msgCardInner(n.it)
-            if (nextMsg) main += '<span class="fl-arrow">▼</span>' + msgCardInner(nextMsg)
+            let lastI = i + 1 // 至少消费到 sub 节点
+            if (call.resSeq != null) {
+              // 已完成：中列从卡A 起 ▼ 串到「结果之后的第一条消息」（出口卡贴底与其对齐）；
+              // 中间的注入/用户消息依次串入；遇工具组/子代理则止（不跨合并）
+              for (let j = i + 2; j < shown.length; j++) {
+                const m = shown[j]
+                if (m.t !== 'msg') break
+                main += '<span class="fl-arrow">▼</span>' + msgCardInner(m.it)
+                lastI = j
+                if (m.it.seq > call.resSeq) break
+              }
+            }
             h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i + 1] || '') + '</div><div class="fl-lane-main">' + main + '</div><div></div></div>'
-            i += nextMsg ? 2 : 1
+            i = lastI
           } else if (n.t === 'msg') h = renderMsg(n.it)
           else if (n.t === 'par') h = renderPar(n, st.expanded)
           else h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i] || '') + '</div><div class="fl-lane-main"><span class="fl-lane-line"></span></div><div></div></div>'

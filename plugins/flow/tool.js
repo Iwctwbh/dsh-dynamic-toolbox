@@ -219,22 +219,22 @@ return {
         '</div>'
     }
 
-    // 助手消息 + 紧跟的同步调用组 → 合并为一行 block（左=助手卡跨行居中，右=每调用 连线对+工具卡）
+    // 助手消息 + 紧跟的同步调用组 → 合并为一行泳道（中=助手卡，右=每调用 连线对+工具卡）
     const renderCallBlock = (aiIt, node, expandedSeq) => {
       const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
-      return '<div class="fl-row"><div class="fl-callblock">' +
-        '<div class="fl-cb-main" style="grid-row:1/' + (node.calls.length + 1) + '">' + msgCardInner(aiIt) + '</div>' +
-        units +
-      '</div></div>'
+      return '<div class="fl-lane"><div></div>' +
+        '<div class="fl-lane-main">' + msgCardInner(aiIt) + '</div>' +
+        '<div class="fl-lane-side">' + units + '</div>' +
+      '</div>'
     }
 
-    // 孤立调用组（前无助手消息，如连续工具步）：左列画主干竖线占位，保持双列节奏
+    // 孤立调用组（前无助手消息，如连续工具步）：中列画主干竖线贯穿，保持泳道节奏
     const renderPar = (node, expandedSeq) => {
       const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
-      return '<div class="fl-row"><div class="fl-callblock">' +
-        '<div class="fl-cb-main fl-cb-empty" style="grid-row:1/' + (node.calls.length + 1) + '"><span class="fl-cb-line"></span></div>' +
-        units +
-      '</div></div>'
+      return '<div class="fl-lane"><div></div>' +
+        '<div class="fl-lane-main"><span class="fl-lane-line"></span></div>' +
+        '<div class="fl-lane-side">' + units + '</div>' +
+      '</div>'
     }
 
     const msgCardInner = (it) => {
@@ -251,7 +251,7 @@ return {
       '</div>'
     }
 
-    const renderMsg = (it) => '<div class="fl-row">' + msgCardInner(it) + '</div>'
+    const renderMsg = (it) => '<div class="fl-lane"><div></div><div class="fl-lane-main">' + msgCardInner(it) + '</div><div></div></div>'
 
     // 完整详情 → 右侧浮层（不插入流程流撑高内容：展开/收起零跳跃，滚动位置不动）：
     // 完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）；头部 ✕ 或再点卡片关闭
@@ -273,53 +273,50 @@ return {
       '</div>'
     }
 
-    // 子代理分支（git 树）：┌─ 分出 / 支线步骤 / └─ 合并；分出行标「入：任务」，合并行标「出：返回」
+    // 子代理分支（泳道左列）：入口卡（◆ 子代理+任务摘要）→ 支线步骤 → 出口卡（返回摘要），
+    // 入口/出口卡右缘各伸一条横线回中列主干竖线；中列竖线贯穿表示主干继续
     const renderSub = async (node) => {
       const c = node.call
-      const parts = []
-      parts.push('<div class="fl-row"><div class="fl-branch-open">' +
-        '<span class="fl-git">├─</span><span class="fl-git-branch">◆</span>' +
-        '<span class="fl-tag" style="color:var(--tb-active-text,#7fa7f0);background:rgba(91,141,239,.12)">子代理</span>' +
-        '<span class="fl-name">' + esc(c.name) + '</span>' +
-        statusGlyph(c.status, c.dur) +
-      '</div></div>')
-      // 入：传给子代理的任务（prompt/description）
-      parts.push('<div class="fl-row"><div class="fl-branch-row">' +
-        '<span class="fl-git">│</span><span class="fl-io-tag">入</span><span class="fl-branch-txt">' + esc(inSummary(c)) + '</span>' +
-      '</div></div>')
+      let sub = '<div class="fl-subcol">'
+      // 入口卡（向左分出）
+      sub += '<div class="fl-sub-card fl-sub-open' + (c.status === 'pending' ? ' fl-live' : '') + '">' +
+        '<div class="fl-iohead"><span class="fl-tag" style="color:var(--tb-active-text,#7fa7f0);background:rgba(91,141,239,.12)">子代理</span>' +
+        '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
+        '<div class="fl-sub-io"><span class="fl-io-tag">入</span><span class="fl-branch-txt">' + esc(inSummary(c)) + '</span></div>' +
+      '</div>'
+      // 支线步骤（子会话事件流，左列内垂直展开）
       const cid = childIdOf(c)
       if (cid) {
-        const sub = await childRows(cid, 10)
-        const liveTag = sub.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : ''
-        parts.push('<div class="fl-row"><div class="fl-branch-meta">' +
-          '<span class="fl-git">│</span><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub.total + ' 步</span>' + liveTag + '</div></div>')
-        for (const r of sub.rows) {
-          parts.push('<div class="fl-row"><div class="fl-branch-row">' +
-            '<span class="fl-git">│</span>' +
-            (r.pill
-              ? '<span class="fl-branch-pill">' + esc(r.pill) + '</span><span class="fl-branch-txt">' + esc(r.txt) + '</span>' + statusGlyph(r.status, r.dur)
-              : '<span class="fl-branch-txt fl-branch-ai">' + esc(r.txt) + '</span>') +
-          '</div></div>')
+        const sub2 = await childRows(cid, 10)
+        sub += '<div class="fl-sub-steps">'
+        sub += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') + '</div>'
+        for (const r of sub2.rows) {
+          sub += '<div class="fl-sub-step">' +
+            (r.pill ? '<span class="fl-branch-pill">' + esc(r.pill) + '</span>' : '') +
+            '<span class="fl-branch-txt' + (r.pill ? '' : ' fl-branch-ai') + '">' + esc(r.txt) + '</span>' +
+            (r.pill ? statusGlyph(r.status, r.dur) : '') +
+          '</div>'
         }
-        if (sub.total > sub.rows.length) {
-          parts.push('<div class="fl-row"><div class="fl-branch-row"><span class="fl-git">│</span><span class="fl-time">… 更早 ' + (sub.total - sub.rows.length) + ' 步未展开</span></div></div>')
-        }
+        if (sub2.total > sub2.rows.length) sub += '<div class="fl-sub-step"><span class="fl-time">… 更早 ' + (sub2.total - sub2.rows.length) + ' 步未展开</span></div>'
+        sub += '</div>'
       } else if (c.status === 'pending') {
-        parts.push('<div class="fl-row"><div class="fl-branch-row"><span class="fl-git">│</span><span class="fl-time">子代理启动中…</span></div></div>')
+        sub += '<div class="fl-sub-steps"><div class="fl-sub-step"><span class="fl-time">子代理启动中…</span></div></div>'
       }
+      // 出口卡（向左回连主干）
       if (c.status !== 'pending') {
-        // 出：子代理返回主会话的结果
         const o = outSummary(c)
-        parts.push('<div class="fl-row"><div class="fl-branch-close">' +
-          '<span class="fl-git">╰─</span><span class="fl-io-tag">出</span>' +
+        sub += '<div class="fl-sub-card fl-sub-close">' +
+          '<div class="fl-sub-io"><span class="fl-io-tag">出</span>' +
           '<span class="fl-time">' + fmtDur(c.dur) + '</span>' +
-          (o ? '<span class="fl-args">' + esc(o.text) + '</span>' : '') +
-        '</div></div>')
+          (o ? '<span class="fl-args">' + esc(o.text) + '</span>' : '') + '</div>' +
+        '</div>'
       }
-      return parts.join('')
+      sub += '</div>'
+      return '<div class="fl-lane"><div class="fl-lane-sub">' + sub + '</div>' +
+        '<div class="fl-lane-main"><span class="fl-lane-line"></span></div><div></div></div>'
     }
 
-    const ARROW = '<div class="fl-row"><div class="fl-arrow">▼</div></div>'
+    const ARROW = '<div class="fl-lane"><div></div><div class="fl-lane-main"><span class="fl-arrow">▼</span></div><div></div></div>'
 
     const render = async (st, sid) => {
       const r = await readLog(sid)

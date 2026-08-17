@@ -505,22 +505,27 @@ return {
       const [catOverrides, setCatOverrides] = React.useState(() => { const s = catsRead(); return (s && s.overrides && typeof s.overrides === 'object') ? s.overrides : {} }) // 管理树拖拽改归属的结果
       const [collapsedCats, setCollapsedCats] = React.useState(() => { const s = catsRead(); return (s && s.collapsed && typeof s.collapsed === 'object') ? s.collapsed : {} })
       const [dragId, setDragId] = React.useState(null) // 管理树正在拖拽的条目 id（entryId）
-      // 明暗主题：theme 服务持有偏好；colorScheme 是当前生效的 light/dark（system 偏好时为解析结果）
+      // 明暗主题：theme 服务持有偏好；ThemeSnapshot 无顶层 colorScheme，生效明暗在 snapshot.active.colorScheme
+      const schemeOf = (snap) => {
+        const c = snap && snap.active && snap.active.colorScheme
+        if (c === 'dark' || c === 'light') return c
+        const top = snap && snap.colorScheme
+        return (top === 'dark' || top === 'light') ? top : null
+      }
       const [themeScheme, setThemeScheme] = React.useState(() => {
-        try { const s = themeSvc && themeSvc.getTheme(); return (s && (s.colorScheme === 'dark' || s.colorScheme === 'light')) ? s.colorScheme : 'dark' } catch (e) { return 'dark' }
+        try { return (themeSvc && schemeOf(themeSvc.getTheme())) || 'dark' } catch (e) { return 'dark' }
       })
       React.useEffect(() => {
         if (!themeSvc) return undefined
         const off = ctx.on('theme/change', (snap) => {
-          try { if (snap && (snap.colorScheme === 'dark' || snap.colorScheme === 'light')) setThemeScheme(snap.colorScheme) } catch (e) {}
+          try { const c = schemeOf(snap); if (c) setThemeScheme(c) } catch (e) {}
         })
         return typeof off === 'function' ? off : undefined
       }, [])
       const toggleTheme = () => {
         if (!themeSvc) return
         try {
-          const snap = themeSvc.getTheme()
-          const cur = snap && (snap.colorScheme === 'dark' || snap.colorScheme === 'light') ? snap.colorScheme : themeScheme
+          const cur = schemeOf(themeSvc.getTheme()) || themeScheme
           themeSvc.setTheme(cur === 'dark' ? 'light' : 'dark')
         } catch (e) {}
       }

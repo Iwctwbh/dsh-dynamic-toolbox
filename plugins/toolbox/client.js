@@ -26,12 +26,9 @@ return {
       '.jr-drawer{position:fixed;right:24px;top:64px;z-index:1300;width:520px;max-width:94vw;max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#17181d);border:1px solid var(--dsw-alias-border-l1,#3a3b44);border-radius:10px;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;pointer-events:auto;box-shadow:-14px 0 44px rgba(0,0,0,.24);animation:jrDrawerIn .16s ease-out;overflow:hidden}',
       '.jr-docked{right:0;top:0;bottom:0;max-height:none;border-radius:0;border-top:none;border-right:none;border-bottom:none;border-left:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:-8px 0 24px rgba(0,0,0,.16)}',
       '.jr-docked .jr-drawer-body{flex:1;min-height:0}',
-      // 底部全宽面板（借鉴 dsh-better-sidebar 双工作台）：贴底全宽，高度经顶边把手拖拽
-      '.jr-docked-bottom{left:0;right:0;bottom:0;top:auto;width:100%;max-width:none;max-height:80vh;border-radius:0;border:none;border-top:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:0 -8px 24px rgba(0,0,0,.16);animation:jrDrawerUp .16s ease-out}',
-      '.jr-docked-bottom .jr-drawer-body{flex:1;min-height:0}',
-      '@keyframes jrDrawerUp{from{transform:translateY(28px);opacity:.3}to{transform:translateY(0);opacity:1}}',
-      '.jr-resize-top{position:absolute;left:0;right:0;top:0;height:6px;cursor:ns-resize;z-index:6;touch-action:none}',
-      '.jr-resize-top:hover{background:rgba(59,130,246,.28)}',
+      // 全占右侧：左侧贴侧边栏右缘（left 由渲染时实测侧边栏给出），上下占满，替代主内容区视图
+      '.jr-docked-full{right:0;top:0;bottom:0;max-height:none;max-width:none;width:auto;border-radius:0;border:none;border-left:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:none;animation:jrDrawerIn .16s ease-out}',
+      '.jr-docked-full .jr-drawer-body{flex:1;min-height:0}',
       '@keyframes jrDrawerIn{from{transform:translateX(28px);opacity:.3}to{transform:translateX(0);opacity:1}}',
       '.jr-drawer-header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);background:var(--dsw-alias-bg-base,#17181d);cursor:move;user-select:none}',
       '.jr-drawer-title{font-weight:600;flex:1;font-size:14px}',
@@ -472,11 +469,11 @@ return {
 
     function Drawer(props) {
       const isOpen = useOpenState()
-      // 三态停靠（借鉴 dsh-better-sidebar 双工作台）：right 右侧栏 / bottom 底部全宽面板 / float 浮动
-      // 兼容旧版 docked 布尔（docked:false → float；docked:true/无 → right）
+      // 三态停靠：right 右侧栏 / full 全占右侧（贴侧边栏右缘起占满）/ float 浮动
+      // 兼容旧版 docked 布尔（docked:false → float；docked:true/无 → right）与已移除的 bottom → right
       const [dockMode, setDockMode] = React.useState(() => {
         const s = lsRead()
-        if (s && (s.dockMode === 'right' || s.dockMode === 'bottom' || s.dockMode === 'float')) return s.dockMode
+        if (s && (s.dockMode === 'right' || s.dockMode === 'full' || s.dockMode === 'float')) return s.dockMode
         return (s && s.docked === false) ? 'float' : 'right'
       })
       const docked = dockMode !== 'float' // 右/底都算停靠（不用浮动 pos）
@@ -962,9 +959,6 @@ return {
         const maxH = vh - 96
         if (resize.mode === 'left') {
           setWidth(clamp(resize.baseW + (resize.startX - e.clientX), MIN_W, maxW))
-        } else if (resize.mode === 'top') {
-          // 底部面板：从顶边上拖增加高度
-          setHeight(clamp(resize.baseH + (resize.startY - e.clientY), MIN_H, maxH))
         } else if (resize.mode === 'right') {
           setWidth(clamp(resize.baseW + (e.clientX - resize.startX), MIN_W, maxW))
         } else if (resize.mode === 'bottom') {
@@ -984,7 +978,6 @@ return {
             const maxH = vh - 96
             const patch = {}
             if (resize.mode === 'left') patch.width = clamp(resize.baseW + (resize.startX - e.clientX), MIN_W, maxW)
-            else if (resize.mode === 'top') patch.height = clamp(resize.baseH + (resize.startY - e.clientY), MIN_H, maxH)
             else if (resize.mode === 'right') patch.width = clamp(resize.baseW + (e.clientX - resize.startX), MIN_W, maxW)
             else if (resize.mode === 'bottom') patch.height = clamp(resize.baseH + (e.clientY - resize.startY), MIN_H, maxH)
             else if (resize.mode === 'corner') {
@@ -1040,19 +1033,19 @@ return {
       const dockButton = React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
-        title: dockMode === 'right' ? '切换到底部面板' : dockMode === 'bottom' ? '切换为浮动' : '停靠到右侧',
+        title: dockMode === 'right' ? '切换到全占右侧' : dockMode === 'full' ? '切换为浮动' : '停靠到右侧',
         onPointerDown: (ev) => ev.stopPropagation(),
-        onClick: (ev) => { ev.stopPropagation(); setDockMode(dockMode === 'right' ? 'bottom' : dockMode === 'bottom' ? 'float' : 'right') },
+        onClick: (ev) => { ev.stopPropagation(); setDockMode(dockMode === 'right' ? 'full' : dockMode === 'full' ? 'float' : 'right') },
       },
         dockMode === 'right'
           ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
               React.createElement('rect', { x: 2.5, y: 2.5, width: 8, height: 8, rx: 1 }),
               React.createElement('rect', { x: 5.5, y: 5.5, width: 6, height: 6, rx: 1, opacity: 0.55 }),
             )
-          : dockMode === 'bottom'
+          : dockMode === 'full'
             ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
-                React.createElement('rect', { x: 2, y: 8, width: 10, height: 3.5, rx: 1 }),
-                React.createElement('rect', { x: 2, y: 3, width: 10, height: 3, rx: 1, opacity: 0.45 }),
+                React.createElement('rect', { x: 1.5, y: 2, width: 3, height: 10, rx: 1, opacity: 0.35 }),
+                React.createElement('rect', { x: 5.5, y: 2, width: 7, height: 10, rx: 1 }),
               )
             : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
                 React.createElement('rect', { x: 2, y: 2, width: 7, height: 10, rx: 1 }),
@@ -1084,17 +1077,7 @@ return {
           onPointerUp: onResizeEnd,
           onPointerCancel: onResizeEnd,
         }))
-      } else if (dockMode === 'bottom') {
-        handles.push(React.createElement('div', {
-          key: 'resize-top',
-          className: 'jr-resize-top',
-          title: '拖拽调整高度',
-          onPointerDown: (e) => onResizeStart(e, 'top'),
-          onPointerMove: onResizeMove,
-          onPointerUp: onResizeEnd,
-          onPointerCancel: onResizeEnd,
-        }))
-      } else {
+      } else if (dockMode === 'float') {
         handles.push(React.createElement('div', {
           key: 'resize-right',
           className: 'jr-resize-right',
@@ -1125,15 +1108,19 @@ return {
       }
 
       const style = {}
-      if (dockMode !== 'bottom' && width) style.width = width + 'px' // 底部模式全宽，宽度不生效
+      if (dockMode === 'right' && width) style.width = width + 'px' // 右侧停靠宽度可调（左缘拖拽）
       if (dockMode === 'float') {
         if (height) style.height = height + 'px'
         if (pos) {
           style.left = pos.x + 'px'
           style.top = pos.y + 'px'
         }
-      } else if (dockMode === 'bottom' && height) {
-        style.height = height + 'px' // 底部面板高度可调（顶边拖拽）
+      } else if (dockMode === 'full') {
+        // 全占右侧：左缘贴侧边栏右缘（实测），上下占满；宽度由 left+right 撑开，不随 width state
+        const sb = typeof document !== 'undefined' ? document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]') : null
+        const sbRight = sb ? Math.max(0, Math.round(sb.getBoundingClientRect().right)) : 0
+        style.left = sbRight + 'px'
+        style.right = '0'
       }
 
       // ---- 分类归属与迁移（导航行与管理树共用同一 catOf 数据源） ----
@@ -1377,7 +1364,7 @@ return {
 
       const drawerEl = React.createElement('div', {
         ref: drawerRef,
-        className: 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'bottom' ? ' jr-docked-bottom' : ''),
+        className: 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'full' ? ' jr-docked-full' : ''),
         style,
       },
         React.createElement('div', {

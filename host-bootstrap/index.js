@@ -73,6 +73,28 @@ const makeRegistry = () => {
       return [...t.values()].sort((a, b) => a.order - b.order)
         .map((x) => ({ id: x.id, label: x.label, order: x.order }))
     },
+    // 与 plugins/toolbox/host.js 的 makeRegistry 保持同一契约：全局 multiplex 注册表在
+    // bootstrapper 首份 provide，框架复用——panel 缺失会让框架的 toolbox/panel RPC 报
+    // "registry.panel is not a function"（v6.3 引全局注册表时漏抄的方法）。
+    async panel(root, call) {
+      const t = tables.get(root || lastRoot)
+      const toolId = call && typeof call.tool === 'string' ? call.tool : ''
+      const entry = t && t.get(toolId)
+      if (!entry || !entry.handler) return { ok: false, error: '工具未注册或已停止: ' + (toolId || '(空)') }
+      try {
+        const res = await entry.handler({
+          action: call && typeof call.action === 'string' ? call.action : '',
+          fields: (call && call.fields && typeof call.fields === 'object') ? call.fields : {},
+          state: (call && call.state) || null,
+          root: (typeof root === 'string' && root) ? root : undefined,
+          session: (call && typeof call.session === 'string' && call.session) ? call.session : undefined,
+        })
+        if (!res || typeof res.html !== 'string') return { ok: false, error: '工具返回了无效的面板内容' }
+        const out = { ok: true, html: res.html, state: res.state == null ? null : res.state }
+        if (typeof res.copy === 'string' && res.copy) out.copy = res.copy
+        return out
+      } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+    },
     has(root) { return root ? tables.has(root) : false },
     roots() { return [...tables.keys()] },
   }
@@ -178,8 +200,11 @@ function hostIdOf(root) {
   return 'toolbox-host-' + String(root).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 48)
 }
 
-// 宿主垫片 agent：注册进 agents 服务（不产生真实会话/不触发 agent/session-start）。
-// 只实现 runner/网关会碰到的面：id、session.header、steer/inject（no-op，通知静默丢弃）。
+// 宿主垫片 agent：进入 agents 服务（不产生真实会话/不触发 agent/session-start）。
+// 用 agents.enter 而非 agents.register：DSH 新版的 register 会把 stub 作为 root agent
+// announce（emit agent/created），agent-presets / schedule 等监听器访问 stub 缺失的
+// agent.ctx 会同步抛错，打断注册→自举；enter 只插入 store、不 announce，正是垫片语义。
+// 垫片对象仍需满足新契约 agent.id === agent.session.id（顶层 session.id，缺一不可）。
 async function ensureHostAgent(ctx, hostId, root) {
   const agents = ctx.get('agents')
   if (!agents) return null
@@ -189,10 +214,22 @@ async function ensureHostAgent(ctx, hostId, root) {
   }
   const stub = {
     id: hostId,
-    session: { header: { id: hostId, cwd: root } },
+    session: { id: hostId, header: { id: hostId, cwd: root } },
     steer() {},
     inject() {},
   }
+  // enter(agent, owner)：owner=undefined → 进程级 root（与"不产生真实会话"的垫片语义一致）。
+  // 返回的 detach 不调用——stub 生命周期跟随本静态插件（进程）-级，进程退出即清空。
+  if (typeof agents.enter === 'function') {
+    try {
+      agents.enter(stub, undefined)
+      return stub
+    } catch (e) {
+      console.warn('[toolbox-bootstrap] 宿主垫片进入失败: ' + String((e && e.message) || e))
+      return null
+    }
+  }
+  // 旧 DSH 兜底（无 enter 时退回 register；旧版无 announce 同步抛错问题）
   if (typeof agents.register !== 'function') return null
   try {
     agents.register(stub)

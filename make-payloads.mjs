@@ -242,6 +242,18 @@ for (const p of PLUGINS) {
   }
   if (p.impl) check(implFiles.join(' + ') + ' [impl]', implFiles.filter((f) => existsSync(new URL('./' + f, import.meta.url))).map(readLocal).join('\n'))
 
+  // Host 半 timer 动词检查（DSH 新版沙箱 ctx 门禁）：用了 ctx.interval/timeout 等但
+  // inject 未声明 'timer' 会在运行时被拒（"sandbox ctx does not expose ..."）——提前构建期拦截。
+  const TIMER_VERBS = ['ctx.interval', 'ctx.timeout', 'ctx.throttle', 'ctx.debounce', 'ctx.setTimeout', 'ctx.setInterval', 'ctx.get(\'timer\')']
+  if (p.impl && p.platform !== 'client-only') {
+    const implSrc = implFiles.filter((f) => existsSync(new URL('./' + f, import.meta.url))).map(readLocal).join('\n')
+    const usesTimer = TIMER_VERBS.some((v) => implSrc.includes(v))
+    if (usesTimer && !(p.inject || []).includes('timer')) {
+      failed = true
+      console.error('timer-inject FAIL: ' + p.key + ' 的 impl 用了 timer 动词但 inject 缺 \'timer\'（DSH 新版动态 Host 必须显式注入）')
+    }
+  }
+
   // 写 plugin.json（文件夹级元数据）
   const dirUrl = new URL('./' + dir + '/', import.meta.url)
   if (!existsSync(dirUrl)) mkdirSync(dirUrl, { recursive: true })

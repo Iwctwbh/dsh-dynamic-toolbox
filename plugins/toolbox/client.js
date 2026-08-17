@@ -601,6 +601,8 @@ return {
       const [snapHint, setSnapHint] = React.useState(false)
       const [resize, setResize] = React.useState(null)
       const [tools, setTools] = React.useState([])
+      const toolsRef = React.useRef([]) // 最新工具列表（延迟回调里判断 active 是否仍有效）
+      toolsRef.current = tools
       const [active, setActive] = React.useState(() => { const s = lsRead(); return s && typeof s.active === 'string' ? s.active : null })
       const [autoMs, setAutoMs] = React.useState({}) // toolId -> 自动刷新毫秒（面板 HTML 声明 data-autorefresh 驱动）
       const [tabBadges, setTabBadges] = React.useState({}) // toolId -> Tab 角标文本（面板 HTML 声明 data-tab-badge 驱动；借鉴 better-sidebar tab 角标）
@@ -615,6 +617,7 @@ return {
       const [rebuildHistory, setRebuildHistory] = React.useState([])
       const [aiUsage, setAiUsage] = React.useState(null)
       const [pluginFilter, setPluginFilter] = React.useState('')
+      const [hideHostOnly, setHideHostOnly] = React.useState(false) // 管理页「隐藏无界面工具」开关（Host-only 无 Client 半）
       const [tabFilter, setTabFilter] = React.useState('') // 工具搜索（整行长条；仅会话内存）
       const [cat, setCat] = React.useState(() => { const s = lsRead(); return s && typeof s.cat === 'string' ? s.cat : 'ai' }) // 激活分类（localStorage 记忆）
       const [activeByCat, setActiveByCat] = React.useState(() => { const s = lsRead(); return (s && s.activeByCat && typeof s.activeByCat === 'object') ? s.activeByCat : {} }) // 各分类最近选中的工具（切分类时恢复）
@@ -949,6 +952,10 @@ return {
       // cwd 用 ref 固定：1.5s 轮询 interval 持有旧闭包，读取 ref 才能跟随「切工作区」拿到最新激活 cwd
       const cwdRef = React.useRef(currentCwd)
       cwdRef.current = currentCwd
+      // 会话上下文检测：记录「上次已处理过」的 cwd 与 session id（只在 effect 内更新，
+      // 不随渲染赋值——否则 effect 里比较恒等永远不会触发）
+      const handledCwdRef = React.useRef(currentCwd || '')
+      const handledSessionRef = React.useRef(currentSessionId || '')
 
       function collectFields() {
         const fields = {}
@@ -1286,6 +1293,43 @@ return {
         refreshPlugins()
         return () => { try { disp() } catch (e) {} offOpen() }
       }, [])
+
+      // 会话/工作区切换跟随：当前会话的 cwd 或 session id 任一变化 = 切会话或切工作区。
+      // 两个仓库工具 id 同名时 refreshTools 的「active 保持」分支不会重载面板，且 loadPanel
+      // 只在 active 变化时触发——切会话（同工作区或跨工作区）active 不变，面板仍显示旧会话
+      // 内容（如 flow 流程图）。这里清掉缓存并强制重拉当前面板（带新 session 参数）。
+      React.useEffect(() => {
+        const cwd = currentCwd || ''
+        const sid = currentSessionId || ''
+        if (!sid) return
+        if (handledCwdRef.current === cwd && handledSessionRef.current === sid) return
+        const cwdChanged = handledCwdRef.current !== cwd
+        const sidChanged = handledSessionRef.current !== sid
+        handledCwdRef.current = cwd
+        handledSessionRef.current = sid
+        // 清会话级缓存（cwd 或 sid 任一变化）：工具的 st.sid 是会话级 state（flow/trace 等
+        // 优先 st.sid 渲染），切会话不清理会沿用旧会话 id——必须清空让工具从新会话重算。
+        // 工具列表只在跨工作区（cwd 变）时重拉（工具按仓库根分组）。
+        if (cwdChanged || sidChanged) {
+          htmlRef.current = {}
+          stateRef.current = {}
+          seqRef.current = {}
+        }
+        if (cwdChanged) {
+          refreshTools()
+        }
+        // 面板重载延后一拍：等 refreshTools 的 setTools/active 纠正落地（新仓库无同名工具时
+        // active 已被兜底切到新列表第一个），用最新 activeRef 加载，避免对不存在工具发请求。
+        ctx.timeout(() => {
+          const t = activeRef.current
+          const list = toolsRef.current
+          if (t && (!list || list.some((x) => x.id === t)) && typeof loadPanelRef.current === 'function') {
+            loadPanelRef.current(t, '', null)
+          }
+        }, 0)
+        refreshPlugins()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [currentCwd, currentSessionId])
 
       // 面板自动刷新：当前工具的 HTML 声明了 data-autorefresh="ms" 时，静默轮询（不转圈、不抢滚动——silent 路径）
       const curAutoMs = active ? autoMs[active] : undefined
@@ -1647,8 +1691,15 @@ return {
                 React.createElement('button', {
                   type: 'button',
                   className: 'tb-btn tb-btn-ghost',
+                  title: '隐藏全部无界面（Host-only）工具，只显示含界面的插件；再次点击恢复',
                   onClick: () => toggleAll(false),
                 }, '全部停止'),
+                React.createElement('button', {
+                  type: 'button',
+                  className: 'tb-chip' + (hideHostOnly ? ' tb-chip-on' : ''),
+                  title: '隐藏无界面（Host-only）工具，只显示含界面（Client）的插件；对含 Client 半的插件工具箱只能启停、操作请去 Cordis 面板',
+                  onClick: () => setHideHostOnly((v) => !v),
+                }, hideHostOnly ? '显示全部' : '隐藏无界面'),
                 React.createElement('input', {
                   className: 'tb-input',
                   style: { flex: '1', minWidth: '120px' },
@@ -1709,11 +1760,26 @@ return {
               React.createElement('div', { className: 'tb-note' }, '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json；「重启后」pill = 下次重建的默认启停，点击切换、只改记忆不动当前状态。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件（框架/主题）请到 Cordis 面板操作。'),
             ),
             React.createElement('div', { className: 'tb-pane-body tb-pane-col' },
-              plugins.length === 0
-                ? React.createElement('div', { className: 'tb-notice' }, '暂无动态插件')
-                : (() => {
-                    // 单个插件节点（行 key 用 pluginId，跨分类移动时稳定；条目 id 追加在副行便于辨认归属键）
-                    const manageRow = (p) =>
+              (() => {
+                // 「隐藏无界面」过滤：host-only（无 Client 半）不显示——含界面的插件启停走工具箱，
+                // 但含 Client 半的仍需去 Cordis 面板；过滤后空态给出提示而非「暂无动态插件」
+                const visiblePlugins = hideHostOnly ? plugins.filter((p) => p.hasClientHalf) : plugins
+                if (visiblePlugins.length === 0) {
+                  if (hideHostOnly) {
+                    return React.createElement('div', null,
+                      React.createElement('div', { className: 'tb-notice' }, '当前没有含界面（Client 半）的插件——全部 Host-only 工具已被「隐藏无界面」过滤'),
+                      React.createElement('button', {
+                        type: 'button',
+                        className: 'tb-btn',
+                        style: { marginTop: '8px' },
+                        onClick: () => setHideHostOnly(false),
+                      }, '显示全部 Host-only 工具'),
+                    )
+                  }
+                  return React.createElement('div', { className: 'tb-notice' }, '暂无动态插件')
+                }
+                // 单个插件节点（行 key 用 pluginId，跨分类移动时稳定；条目 id 追加在副行便于辨认归属键）
+                const manageRow = (p) =>
                       React.createElement('div', {
                         key: p.pluginId,
                         className: 'tb-manage-row',
@@ -1759,12 +1825,12 @@ return {
                     // 过滤模式：平铺（原行为）；否则按分类树展示
                     const fq = pluginFilter.trim().toLowerCase()
                     if (fq) {
-                      return React.createElement('div', { className: 'tb-manage-list' }, plugins
+                      return React.createElement('div', { className: 'tb-manage-list' }, visiblePlugins
                         .filter((p) => (p.name || '').toLowerCase().indexOf(fq) >= 0 || (p.pluginId || '').toLowerCase().indexOf(fq) >= 0)
                         .map(manageRow))
                     }
                     const byCat = {}
-                    for (const p of plugins) {
+                    for (const p of visiblePlugins) {
                       const cid = p.entryId ? catOf(p.entryId) : 'system' // 清单外插件归「系统」且不可拖（无稳定归属键）
                       if (!byCat[cid]) byCat[cid] = []
                       byCat[cid].push(p)

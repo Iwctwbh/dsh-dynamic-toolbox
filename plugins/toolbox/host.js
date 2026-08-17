@@ -61,7 +61,7 @@ return {
                   const rec = recs[e.id]
                   cache[e.name] = {
                     entryId: e.id,
-                    defaultStart: rec && typeof rec.enabled === 'boolean' ? rec.enabled : Boolean(e.autoStart && !e.approval),
+                    defaultStart: rec && typeof rec.enabled === 'boolean' ? rec.enabled : Boolean(e.autoStart),
                   }
                 }
               }

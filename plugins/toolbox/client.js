@@ -247,7 +247,9 @@ return {
       '.fl-tag{flex:none;display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.3px}',
       '.fl-time{flex:none;font-size:10.5px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-variant-numeric:tabular-nums}',
       '.fl-preview{font-size:12px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4));max-width:500px}',
-      '.fl-arrow{flex:none;width:100%;text-align:center;line-height:1;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-size:10px;opacity:.7}',
+      '.fl-arrow{flex:none;width:100%;text-align:left;padding-left:24px;line-height:1;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-size:10px;opacity:.7}',
+      // 流程图画布实色底（[data-flow] 精准选中，只作用流程图；透明皮肤下不透后方聊天内容，防重影）
+      '.jr-drawer [data-flow] .tb-pane-body{background:var(--dsw-alias-bg-overlay,#1e1f24);border-radius:8px}',
       '.fl-par{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}',
       '.fl-par-row{display:flex;align-items:flex-start;gap:2px;min-width:0}',
       '.fl-card{width:fit-content;max-width:460px;min-width:200px;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:8px;padding:6px 9px;display:flex;flex-direction:column;gap:3px;background:var(--tb-input-bg,var(--dsw-alias-bg-layer-1,#26272e))}',

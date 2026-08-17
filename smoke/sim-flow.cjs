@@ -68,14 +68,14 @@ const check = (label, cond, detail) => {
   check('自动刷新声明 data-autorefresh=2000', r.html.indexOf('data-autorefresh="2000"') >= 0)
   check('用户/助手消息节点', r.html.indexOf('帮我看下这个目录') >= 0 && r.html.indexOf('好的，我先并行读文件') >= 0)
   check('箭头连接符 ▼', r.html.indexOf('fl-arrow') >= 0 && r.html.indexOf('▼') >= 0)
-  // 平行调用：read+grep 同 step → 从主干向右各分一条支线（├▶ / ╰▶ 合并）
-  check('平行调用向右分支（├▶ 与 ╰▶）', r.html.indexOf('├▶') >= 0 && r.html.indexOf('╰▶') >= 0)
-  check('平行卡片组（read+grep 各一张卡）', r.html.indexOf('fl-par') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
-  // 进出关系：入=传入参数摘要，出=返回结果摘要
-  check('入出行存在（fl-in / fl-out）', r.html.indexOf('fl-in') >= 0 && r.html.indexOf('fl-out') >= 0)
-  check('入=提取关键参数（file_path: a.js）', r.html.indexOf('file_path: a.js') >= 0, '')
-  check('出=返回结果摘要（file a content）', r.html.indexOf('file a content') >= 0)
-  check('卡片自适应宽度（fit-content，不占满）', r.html.indexOf('fl-card') >= 0)
+  // 平行调用：read+grep 同 step → 连线布局（左主干/右工具卡，中间 上=输入▶ 下=◀输出 两条水平线）
+  check('调用连线布局（fl-callblock + fl-wp 连线对）', r.html.indexOf('fl-callblock') >= 0 && r.html.indexOf('fl-wp') >= 0)
+  check('输入线 ▶ 右出 / 输出线 ◀ 回左', r.html.indexOf('▶') >= 0 && r.html.indexOf('◀') >= 0)
+  check('平行卡片组（read+grep 各一张工具卡）', r.html.indexOf('fl-callside') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
+  // 进出关系：连线标签 输入=传入参数摘要，输出=返回结果摘要
+  check('输入线标签=提取关键参数（输入 file_path: a.js）', r.html.indexOf('输入 file_path: a.js') >= 0, '')
+  check('输出线标签=返回结果摘要（file a content）', r.html.indexOf('file a content') >= 0)
+  check('工具卡存在（fl-iocard）', r.html.indexOf('fl-iocard') >= 0)
   check('调用状态 ✓ 与耗时', r.html.indexOf('✓') >= 0)
   // 子代理 git 树 + 进出
   check('子代理分支符号 ├─', r.html.indexOf('├─') >= 0)
@@ -98,7 +98,7 @@ const check = (label, cond, detail) => {
   check('点卡片 → 展开完整详情块', r.html.indexOf('fl-detail') >= 0)
   check('详情 → 完整传入（美化 JSON file_path）', r.html.indexOf('&quot;file_path&quot;: &quot;a.js&quot;') >= 0 || r.html.indexOf('file_path') >= 0)
   check('详情 → 完整返回（file a content）', r.html.indexOf('file a content') >= 0)
-  check('详情 → 卡片高亮 fl-card-on', r.html.indexOf('fl-card-on') >= 0)
+  check('详情 → 卡片高亮 fl-on', r.html.indexOf('fl-on') >= 0)
   r = await h({ action: 'fdetail', fields: { __el: { seq: '3' } }, state: r.state, root: ROOT, session: 's-main' })
   check('再点 → 收起详情', r.html.indexOf('fl-detail') < 0)
 

@@ -673,7 +673,21 @@ return {
               if (res && res.ok) {
                 stateRef.current[toolId] = res.state
                 htmlRef.current[toolId] = res.html
+                // 滚动位置保持（同抽屉 htmlScrollRef 机制）：innerHTML 替换会把 column-reverse
+                // 滚动容器拉回底部（点详情/自动轮询都会跳），替换前记录 scrollTop，替换后同步恢复
+                let savedScrolls = null
+                try {
+                  savedScrolls = []
+                  const scrollers = bodyEl.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
+                  for (const s of scrollers) savedScrolls.push(s.scrollTop)
+                } catch (e) {}
                 bodyEl.innerHTML = res.html
+                if (savedScrolls) {
+                  try {
+                    const after = bodyEl.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
+                    after.forEach((s, i) => { if (i < savedScrolls.length) s.scrollTop = savedScrolls[i] })
+                  } catch (e) {}
+                }
                 const am = /data-autorefresh="(\d+)"/.exec(res.html)
                 if (entry.timer) { clearInterval(entry.timer); entry.timer = null }
                 if (am) entry.timer = setInterval(() => { pipLoad(toolId, '__refresh', null) }, Math.max(1500, parseInt(am[1], 10) || 2000))

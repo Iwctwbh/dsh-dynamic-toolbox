@@ -167,7 +167,7 @@ return {
       return '<span class="fl-spin"></span>'
     }
 
-    // ---- 进出关系：传入/返回摘要（用户核心诉求——看到传给 skill 什么、skill 返回什么）----
+    // 进出摘要：传入/返回（用户核心诉求——看到传给 skill 什么、skill 返回什么）
     // 传入：从 arguments JSON 提取最有信息量的字段（command/file_path/pattern/prompt…），而非整段 JSON
     const ARG_KEYS = ['command', 'file_path', 'path', 'pattern', 'query', 'q', 'description', 'prompt', 'text', 'content', 'url', 'name', 'key', 'expression', 'expr', 'code', 'script', 'tool', 'method', 'message', 'input', 'old_string', 'new_string']
     const inSummary = (c) => {
@@ -193,28 +193,66 @@ return {
       const first = lines[0] || ''
       return { text: (first ? oneLine(first, 72) : '（空返回）') + (c.outLen > 72 ? ' · ' + fmtSize(c.outLen) : ''), err: false }
     }
-    // 进出两行（传入必有；返回 pending 时显示进行中）
-    const ioRows = (c) => {
+    // 调用连线单元（形态约定·手绘参考图：主干卡在左、工具卡在右，中间两条水平连线——
+    // 上=输入摘要 + 横线 + ▶ 右出；下=◀ + 横线 + 输出摘要 回左；输出线绿色系、错误红色系、进行中虚线）；
+    // 进行中的工具卡高亮脉冲（调用到哪步哪步亮）；点击工具卡展开完整传入/返回（详情挂卡下方）
+    const renderCallWire = (c, expandedSeq) => {
+      const km = KIND_META[c.cat] || KIND_META.builtin
+      const isExp = expandedSeq === c.seq
+      const pending = c.status === 'pending'
       const o = outSummary(c)
-      return '<div class="fl-io fl-in"><span class="fl-io-tag">入</span>' + esc(inSummary(c)) + '</div>' +
-        (o
-          ? '<div class="fl-io fl-out' + (o.err ? ' fl-out-err' : '') + '"><span class="fl-io-tag">出</span>' + esc(o.text) + '</div>'
-          : '<div class="fl-io fl-out"><span class="fl-io-tag">出</span><span class="fl-time">进行中…</span></div>')
+      return '<div class="fl-wp">' +
+          '<div class="fl-wl"><span class="fl-wl-txt">输入 ' + esc(inSummary(c)) + '</span>' +
+            '<span class="fl-wl-row"><span class="fl-wl-line"></span><span class="fl-wl-arr">▶</span></span></div>' +
+          (pending
+            ? '<div class="fl-wl fl-wl-b fl-wl-wait"><span class="fl-wl-txt">输出 进行中…</span>' +
+              '<span class="fl-wl-row"><span class="fl-wl-arr">◀</span><span class="fl-wl-line"></span></span></div>'
+            : '<div class="fl-wl fl-wl-b' + (o && o.err ? ' fl-wl-err' : '') + '"><span class="fl-wl-txt">输出 ' + esc(o ? o.text : '') + '</span>' +
+              '<span class="fl-wl-row"><span class="fl-wl-arr">◀</span><span class="fl-wl-line"></span></span></div>') +
+        '</div>' +
+        '<div class="fl-callside">' +
+          '<div class="fl-iocard' + (pending ? ' fl-live' : '') + (isExp ? ' fl-on' : '') + (o && o.err ? ' fl-err' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击展开完整传入/返回">' +
+            '<div class="fl-iohead"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
+            '<span class="fl-name">' + esc(c.name) + '</span>' +
+            (pending ? '<span class="fl-spin"></span>' : statusGlyph(c.status, c.dur)) + '</div>' +
+          '</div>' +
+          (isExp ? detailBlock(c) : '') +
+        '</div>'
     }
 
-    const renderMsg = (it) => {
+    // 助手消息 + 紧跟的同步调用组 → 合并为一行 block（左=助手卡跨行居中，右=每调用 连线对+工具卡）
+    const renderCallBlock = (aiIt, node, expandedSeq) => {
+      const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
+      return '<div class="fl-row"><div class="fl-callblock">' +
+        '<div class="fl-cb-main" style="grid-row:1/' + (node.calls.length + 1) + '">' + msgCardInner(aiIt) + '</div>' +
+        units +
+      '</div></div>'
+    }
+
+    // 孤立调用组（前无助手消息，如连续工具步）：左列画主干竖线占位，保持双列节奏
+    const renderPar = (node, expandedSeq) => {
+      const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
+      return '<div class="fl-row"><div class="fl-callblock">' +
+        '<div class="fl-cb-main fl-cb-empty" style="grid-row:1/' + (node.calls.length + 1) + '"><span class="fl-cb-line"></span></div>' +
+        units +
+      '</div></div>'
+    }
+
+    const msgCardInner = (it) => {
       const isUser = it.role === 'user'
       const isAi = it.role === 'ai'
       const color = isUser ? 'var(--tb-done-text,#81c784)' : isAi ? 'var(--tb-active-text,#7fa7f0)' : 'var(--tb-text-3,#777884)'
-      const bg = isUser ? 'rgba(102,187,106,.08)' : isAi ? 'rgba(91,141,239,.08)' : 'rgba(138,139,150,.06)'
       const label = isUser ? '用户' : isAi ? '助手' : '注入'
-      return '<div class="fl-row"><div class="fl-node" style="border-color:' + color + '33;background:' + bg + '">' +
-        '<div class="fl-node-head"><span class="fl-tag" style="color:' + color + '">' + label + '</span>' +
+      // 卡片统一面片底色（fl-node），角色色只落在左侧色条 + 几何符号/tag 上，避免整卡彩色半透明的杂乱感
+      return '<div class="fl-node" style="border-left-color:' + color + '">' +
+        '<div class="fl-node-head"><span class="fl-glyph" style="color:' + color + '">' + (isUser ? '▲' : isAi ? '◆' : '■') + '</span><span class="fl-tag" style="color:' + color + '">' + label + '</span>' +
         '<span class="fl-time">' + fmtTime(it.time) + '</span>' +
         (it.tok ? '<span class="fl-time">+' + it.tok + ' tok</span>' : '') + '</div>' +
         '<div class="fl-preview">' + esc(it.preview || '（空）') + '</div>' +
-      '</div></div>'
+      '</div>'
     }
+
+    const renderMsg = (it) => '<div class="fl-row">' + msgCardInner(it) + '</div>'
 
     // 完整详情（点击卡片展开）：完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）
     const detailBlock = (c) => {
@@ -228,29 +266,6 @@ return {
         '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入' + (input.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(inShown) + '</pre></div>' +
         '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
       '</div>'
-    }
-
-    // 平行调用组：同一 step 的多个普通工具调用，从主干向右各分一条支线（├▶），末条 ╰▶ 合并回主干；
-    // 卡片自适应宽度（不占满），入/出两行展示 传入参数 → 返回结果 的进出关系；点击卡片展开完整详情
-    const renderPar = (node, expandedSeq) => {
-      const n = node.calls.length
-      const rows = node.calls.map((c, i) => {
-        const km = KIND_META[c.cat] || KIND_META.builtin
-        const glyph = n === 1 ? '├▶' : (i === n - 1 ? '╰▶' : '├▶')
-        const isExp = expandedSeq === c.seq
-        return '<div class="fl-par-row">' +
-          '<span class="fl-git">' + glyph + '</span>' +
-          '<div style="display:flex;flex-direction:column;gap:2px;max-width:460px">' +
-            '<div class="fl-card' + (isExp ? ' fl-card-on' : '') + '" style="border-color:' + km.color + '44;cursor:pointer" data-action="fdetail" data-seq="' + c.seq + '" title="点击展开完整传入/返回">' +
-              '<div class="fl-node-head"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
-              '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
-              ioRows(c) +
-            '</div>' +
-            (isExp ? detailBlock(c) : '') +
-          '</div>' +
-        '</div>'
-      })
-      return '<div class="fl-row"><div class="fl-par">' + rows.join('') + '</div></div>'
     }
 
     // 子代理分支（git 树）：┌─ 分出 / 支线步骤 / └─ 合并；分出行标「入：任务」，合并行标「出：返回」
@@ -318,21 +333,27 @@ return {
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">主干自上而下：用户/助手/工具组（向右分支=同步调用）；子代理以 git 树分支展开实时步骤；点卡片看完整传入/返回</div>')
+      parts.push('<div class="tb-note">主干自上而下：用户/助手；调用右出输入卡 ➔、左回输出卡 ←，进行中的调用高亮脉冲；点卡片看完整传入/返回；子代理以 git 树分支展开实时步骤</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
       if (!shown.length) {
         parts.push('<div class="tb-notice">当前会话还没有事件</div>')
       } else {
-        // 子代理分支并行展开（串行 await 会让多个子代理分支的 readLog 延迟叠加）
-        const nodeHtmls = await Promise.all(shown.map((n) => {
-          if (n.t === 'msg') return Promise.resolve(renderMsg(n.it))
-          if (n.t === 'par') return Promise.resolve(renderPar(n, st.expanded))
-          return renderSub(n)
-        }))
+        // 子代理分支并行预渲染（串行 await 会让多个子代理分支的 readLog 延迟叠加）
+        const subHtmls = {}
+        await Promise.all(shown.map(async (n, i) => { if (n.t === 'sub') subHtmls[i] = await renderSub(n) }))
         const rows = []
-        for (const h of nodeHtmls) {
+        for (let i = 0; i < shown.length; i++) {
+          const n = shown[i]
+          let h
+          // 助手消息紧跟同步调用组 → 合并为一行（左=助手卡，右=连线+工具卡）
+          if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'par') {
+            h = renderCallBlock(n.it, shown[i + 1], st.expanded)
+            i++
+          } else if (n.t === 'msg') h = renderMsg(n.it)
+          else if (n.t === 'par') h = renderPar(n, st.expanded)
+          else h = subHtmls[i] || ''
           rows.push(h)
           rows.push(ARROW)
         }

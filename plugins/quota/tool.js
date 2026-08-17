@@ -16,10 +16,12 @@ return {
     const subprocess = ctx.get('subprocess')
 
     // 提供商表：id / 显示名 / 凭据键名（cc-switch 模板分类：Token Plan 套餐配额 + 第三方余额）
+    // qwen 特殊：阿里云未开放套餐用量 API key 接口（zeldaEasy 端点实测 ConsoleNeedLogin），
+    // 只能走控制台 Cookie 会话（CodexBar baseline 同款）——凭据键为 Cookie 而非 API key
     const PROVIDERS = [
       { id: 'kimi', label: 'Kimi Coding', keyName: 'KIMI_CODING_API_KEY' },
       { id: 'deepseek', label: 'DeepSeek', keyName: 'DEEPSEEK_API_KEY' },
-      { id: 'qwen', label: 'Qwen Plan · 百炼', keyName: 'QWEN_TOKEN_PLAN_CN_API_KEY' },
+      { id: 'qwen', label: 'Qwen Plan · 百炼', keyName: 'QWEN_TOKEN_PLAN_CN_API_KEY', credName: 'QWEN_TOKEN_PLAN_CN_COOKIE', credNote: '控制台 Cookie（bailian.console.aliyun.com 登录后从浏览器复制）' },
     ]
     const providerOf = (id) => {
       for (const p of PROVIDERS) { if (p.id === id) return p }
@@ -28,27 +30,29 @@ return {
 
     // 子进程脚本：读凭据 → 按提供商查询 → 输出归一化 JSON（windows[] 配额窗口 / balances[] 余额）。
     // 数组 join 规避模板 \n 转义坑（PLUGIN-DEV.md 血泪）；提供商 id/键名经 JSON.stringify 内联。
-    const scriptFor = (pid, keyName) => [
+    const scriptFor = (pid, keyName, cookieName) => [
       "const https = require('https')",
       "const fs = require('fs')",
       "const os = require('os')",
       "const path = require('path')",
       'const PID = ' + JSON.stringify(pid),
       'const KEY_NAME = ' + JSON.stringify(keyName),
-      "function readKey() {",
-      "  if (process.env[KEY_NAME]) return process.env[KEY_NAME]",
+      'const COOKIE_NAME = ' + JSON.stringify(cookieName || ''),
+      "function readNamed(n) {",
+      "  if (!n) return ''",
+      "  if (process.env[n]) return process.env[n]",
       "  try {",
       "    const f = path.join(os.homedir(), '.dsh', '.credentials.yaml')",
-      "    const re = new RegExp('^' + KEY_NAME + ':\\\\s*(\\\\S+)\\\\s*$', 'm')",
+      "    const re = new RegExp('^' + n + ':\\\\s*(.+)\\\\s*$', 'm')",
       "    const m = fs.readFileSync(f, 'utf8').match(re)",
-      "    if (m) return m[1]",
+      "    if (m) return m[1].trim()",
       "  } catch (e) {}",
       "  return ''",
       "}",
       "const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0) }",
       "const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0 }",
-      "const key = readKey()",
-      "if (!key) out({ ok: false, error: '未找到 ' + KEY_NAME + '（环境变量或 ~/.dsh/.credentials.yaml）' })",
+      "const key = readNamed(KEY_NAME)",
+      "if (!key && PID !== 'qwen') out({ ok: false, error: '未找到 ' + KEY_NAME + '（环境变量或 ~/.dsh/.credentials.yaml）' })",
       "function req(o) { return new Promise((resolve) => {",
       "  const r = https.request({ host: o.host, port: 443, path: o.path, method: o.method, timeout: 20000, headers: o.headers }, (res) => {",
       "    let body = ''",
@@ -96,16 +100,20 @@ return {
       "        balances: infos.map((b) => ({ currency: b.currency || '', total: num(b.total_balance), granted: num(b.granted_balance), toppedUp: num(b.topped_up_balance) }))",
       "      } })",
       "    }",
-      // ---- Qwen Token Plan（阿里云百炼 Coding Plan）：5h/周/月 三层窗口 ----
+      // ---- Qwen Token Plan（阿里云百炼 Coding Plan）：控制台 Cookie 会话模式 ----
+      // 阿里云未开放套餐用量 API key 接口（zeldaEasy 实测 ConsoleNeedLogin），只能控制台会话（CodexBar baseline 同款）
       "    else if (PID === 'qwen') {",
+      "      const cookie = readNamed(COOKIE_NAME)",
+      "      if (!cookie) out({ ok: false, error: 'Qwen Plan 套餐用量阿里云未开放 API key 查询接口（实测 ConsoleNeedLogin），仅支持控制台会话：登录百炼控制台 bailian.console.aliyun.com 后，浏览器 F12 → Network → 任意请求 → 复制 Cookie 整行，写入凭据键 ' + COOKIE_NAME + '（环境变量或 ~/.dsh/.credentials.yaml）；或前往控制台「订阅套餐」页直接查看' })",
       "      const qPath = '/data/api.json?action=zeldaEasy.broadscope-bailian.codingPlan.queryCodingPlanInstanceInfoV2&product=broadscope-bailian&api=queryCodingPlanInstanceInfoV2'",
-      "      const r = await req({ host: 'bailian.console.aliyun.com', path: qPath, method: 'POST', body: '{}', headers: { Authorization: 'Bearer ' + key, 'x-api-key': key, 'X-DashScope-API-Key': key, 'Content-Type': 'application/json', Accept: 'application/json' } })",
+      "      const r = await req({ host: 'bailian.console.aliyun.com', path: qPath, method: 'POST', body: '{}', headers: { Cookie: cookie, 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' } })",
       "      if (r.error) out({ ok: false, error: r.error })",
       "      if (r.status !== 200) out({ ok: false, error: 'HTTP ' + r.status + ': ' + (r.raw || '').slice(0, 200) })",
       "      const j = r.json || {}",
+      "      if (j.code === 'ConsoleNeedLogin') out({ ok: false, error: '控制台 Cookie 已过期或不完整，请重新登录百炼控制台后复制最新 Cookie 更新到 ' + COOKIE_NAME })",
       "      const datas = j.data || {}",
       "      const infos = Array.isArray(datas.codingPlanInstanceInfos) ? datas.codingPlanInstanceInfos : []",
-      "      if (!infos.length) out({ ok: false, error: '未返回套餐信息（部分 CN 账号 API 模式要求控制台会话——CodexBar 同款已知限制）' })",
+      "      if (!infos.length) out({ ok: false, error: '未返回套餐信息：' + (r.raw || '').slice(0, 160) })",
       "      const inst = infos[0] || {}",
       "      const q = inst.codingPlanQuotaInfo || datas.codingPlanQuotaInfo || {}",
       "      const wins = []",
@@ -123,7 +131,7 @@ return {
       const p = providerOf(pid)
       try {
         const handle = subprocess.spawn({
-          argv: ['node', '-e', scriptFor(p.id, p.keyName)],
+          argv: ['node', '-e', scriptFor(p.id, p.keyName, p.credName)],
           cwd: wsRoot,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 }, stderr: { maxBytes: 16 * 1024 } },
           graceMs: 30000,
@@ -201,7 +209,7 @@ return {
         PROVIDERS.map((pv) => '<button type="button" class="tb-chip' + (pv.id === p.id ? ' tb-chip-on' : '') + '" data-action="pick" data-v="' + pv.id + '">' + esc(pv.label) + '</button>').join('') +
         '<button type="button" class="tb-btn tb-btn-sm tb-btn-primary" data-action="query"' + (st.loading ? ' disabled' : '') + '>' + (st.loading ? '查询中…' : '刷新') + '</button>' +
       '</div>')
-      parts.push('<div class="tb-row"><span class="tb-note">凭据键 ' + p.keyName + '（环境变量 / ~/.dsh/.credentials.yaml）</span>' +
+      parts.push('<div class="tb-row"><span class="tb-note">' + (p.credName ? '凭据键 ' + p.credName + '（' + p.credNote + '）' : '凭据键 ' + p.keyName + '（环境变量 / ~/.dsh/.credentials.yaml）') + '</span>' +
         (st.at ? '<span class="tb-note">更新于 ' + esc(st.at) + '</span>' : '') + '</div>')
       if (st.error) parts.push('<div class="tb-banner tb-banner-error">' + esc(st.error) + '</div>')
       if (d) {

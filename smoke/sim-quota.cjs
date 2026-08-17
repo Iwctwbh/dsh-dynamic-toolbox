@@ -41,6 +41,8 @@ const subprocess = {
       }
     } else if (mode === 'nokey') {
       text = JSON.stringify({ ok: false, error: '未找到 KIMI_CODING_API_KEY（环境变量或 ~/.dsh/.credentials.yaml）' })
+    } else if (mode === 'qwen-nocookie') {
+      text = JSON.stringify({ ok: false, error: 'Qwen Plan 套餐用量阿里云未开放 API key 查询接口（实测 ConsoleNeedLogin），仅支持控制台会话：登录百炼控制台后复制 Cookie 写入凭据键 QWEN_TOKEN_PLAN_CN_COOKIE' })
     } else if (mode === 'http') {
       text = JSON.stringify({ ok: false, error: 'HTTP 401: invalid authentication' })
     } else {
@@ -101,6 +103,12 @@ const check = (label, cond, detail) => {
   check('Qwen 套餐名渲染', r.html.indexOf('Token Plan 标准版') >= 0)
   check('Qwen 三层窗口（5h/每周/每月）', r.html.indexOf('5 小时窗口') >= 0 && r.html.indexOf('每周额度') >= 0 && r.html.indexOf('每月额度') >= 0)
   check('Qwen 窗口余量（5h 剩 89k）', r.html.indexOf('剩 89.0k') >= 0)
+
+  // qwen 无控制台 Cookie → 明确引导（阿里云未开放 API key 接口）
+  mode = 'qwen-nocookie'
+  r = await h({ action: 'pick', fields: { __el: { v: 'qwen' } }, state: null, root: ROOT })
+  check('Qwen 无 Cookie → 引导复制控制台 Cookie', r.html.indexOf('QWEN_TOKEN_PLAN_CN_COOKIE') >= 0 && r.html.indexOf('ConsoleNeedLogin') >= 0)
+  mode = 'ok'
 
   // 手动刷新（保持提供商与数据）
   r = await h({ action: 'query', fields: {}, state: r.state, root: ROOT })

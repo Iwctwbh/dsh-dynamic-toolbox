@@ -255,14 +255,15 @@ return {
 
     // 完整详情 → 右侧浮层（不插入流程流撑高内容：展开/收起零跳跃，滚动位置不动）：
     // 完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）；头部 ✕ 或再点卡片关闭
-    const detailRail = (c) => {
+    const detailRail = (c, anim) => {
       let input = c.argsRaw || ''
       try { input = JSON.stringify(JSON.parse(c.argsRaw || '{}'), null, 2) } catch (e) {}
       const cap = 8000
       const inShown = input.length > cap ? input.slice(0, cap) + '\n…（截断，共 ' + input.length + ' 字符）' : input
       const out = c.status === 'pending' ? '（进行中，尚无返回）' : (c.resultText || '（空返回）')
       const outShown = out.length > cap ? out.slice(0, cap) + '\n…（截断，共 ' + out.length + ' 字符）' : out
-      return '<div class="fl-rail">' +
+      // anim=是否新展开（轮询重渲染不重播滑入动画，防闪烁）
+      return '<div class="fl-rail' + (anim ? ' fl-rail-anim' : '') + '">' +
         '<div class="fl-rail-head"><span class="fl-rail-title">' + esc(c.name) + ' · 详情</span>' +
         '<button type="button" class="fl-rail-x" data-action="fdetail" data-seq="' + c.seq + '" title="关闭详情">✕</button></div>' +
         '<div class="fl-rail-body">' +
@@ -369,8 +370,9 @@ return {
       // 详情右侧浮层：展开状态且目标调用仍在可视事件集内时渲染（absolute 覆盖右缘，流程流不动）
       if (st.expanded != null) {
         const target = items.find((it) => it.kind === 'call' && it.seq === st.expanded)
-        if (target) parts.push(detailRail(target))
+        if (target) parts.push(detailRail(target, st.freshSeq === target.seq))
       }
+      delete st.freshSeq // 一次性动画标记，不残留进 state
       parts.push('</div>')
       return parts.join('')
     }
@@ -384,6 +386,7 @@ return {
       else if (action === 'fdetail' && el.seq != null) {
         const seq = Number(el.seq)
         st.expanded = st.expanded === seq ? null : seq
+        st.freshSeq = st.expanded // 仅新展开的那次渲染播放滑入动画（null=收起不播；轮询不重播）
       }
       const sid = session || st.sid
       if (!sid) return { ok: true, html: '<div class="jr-tabpanel tb-root"><div class="tb-notice">未找到当前会话</div></div>', state: st }

@@ -1,32 +1,44 @@
-// quota 工具仿真：mock subprocess 复刻 Node https 查询脚本的输出契约。
-// 断言：余量摘要渲染（主额度/窗口/并发 pill 与 bar）、无 key 错误、网络错误、HTTP 错误、刷新契约。
+// quota 工具仿真：mock subprocess 复刻 Node https 查询脚本的输出契约（归一化模型）。
+// 断言：多提供商切换（kimi/deepseek/qwen）、窗口/余额渲染、无 key 错误、网络错误、HTTP 错误、刷新契约。
 const fs = require('fs')
 const path = require('path')
 const ROOT = path.resolve(__dirname, '..')
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8')
 
-const USAGES_OK = {
-  user: { userId: 'u1', region: 'REGION_CN', membership: { level: 'LEVEL_ADVANCED' } },
-  usage: { limit: '100', used: '19', remaining: '81', resetTime: '2026-08-21T06:53:22Z' },
-  limits: [{ window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' }, detail: { limit: '100', used: '3', remaining: '97', resetTime: '2026-08-16T21:53:22Z' } }],
-  parallel: { limit: '30', details: ['a', 'b'] },
-  boosterWallet: { status: 'STATUS_DISABLED' },
-}
-
 let mode = 'ok'
 const subprocess = {
   spawn({ argv }) {
-    // 复刻 quota tool 的 QUOTA_SCRIPT 输出契约（脚本真实求值会读 key/发请求，这里直接给等价输出）
+    // 复刻 quota tool 的 scriptFor 输出契约（脚本真实求值会读 key/发请求，这里直接给等价输出）
+    // argv[2] 是脚本文本，内含 const PID = "<provider>"，据此判断当前查询的提供商
+    const script = String((argv && argv[2]) || '')
+    const m = /PID = "([a-z]+)"/.exec(script)
+    const pid = m ? m[1] : 'kimi'
     let text
     if (mode === 'ok') {
-      const j = USAGES_OK
-      const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0 }
-      text = JSON.stringify({ ok: true, data: {
-        level: j.user.membership.level, region: j.user.region,
-        main: { limit: num(j.usage.limit), used: num(j.usage.used), remaining: num(j.usage.remaining), resetTime: j.usage.resetTime },
-        window: { limit: num(j.limits[0].detail.limit), used: num(j.limits[0].detail.used), remaining: num(j.limits[0].detail.remaining), resetTime: j.limits[0].detail.resetTime, durationMin: num(j.limits[0].window.duration) },
-        parallel: num(j.parallel.limit), parallelActive: j.parallel.details.length, booster: j.boosterWallet.status,
-      } })
+      if (pid === 'kimi') {
+        text = JSON.stringify({ ok: true, data: {
+          plan: 'LEVEL_ADVANCED',
+          windows: [
+            { label: '主额度（每周重置）', used: 19, total: 100, resetTime: '2026-08-21T06:53:22Z' },
+            { label: '限流窗口（300 分钟滑动）', used: 3, total: 100, resetTime: '2026-08-16T21:53:22Z' },
+          ],
+          extra: '并发 2 / 30',
+        } })
+      } else if (pid === 'deepseek') {
+        text = JSON.stringify({ ok: true, data: {
+          available: true,
+          balances: [{ currency: 'CNY', total: 48.5, granted: 8.5, toppedUp: 40 }],
+        } })
+      } else {
+        text = JSON.stringify({ ok: true, data: {
+          plan: 'Token Plan 标准版',
+          windows: [
+            { label: '5 小时窗口', used: 1000, total: 90000, resetTime: 1787000000000 },
+            { label: '每周额度', used: 20000, total: 900000, resetTime: 1787500000000 },
+            { label: '每月额度', used: 30000, total: 3600000, resetTime: 1788500000000 },
+          ],
+        } })
+      }
     } else if (mode === 'nokey') {
       text = JSON.stringify({ ok: false, error: '未找到 KIMI_CODING_API_KEY（环境变量或 ~/.dsh/.credentials.yaml）' })
     } else if (mode === 'http') {
@@ -67,23 +79,36 @@ const check = (label, cond, detail) => {
   const h = handlers.quota
   if (!h) { console.log('FAIL | quota 未注册'); process.exit(1) }
 
-  // 打开自动查询（首次无数据时 action '' 自动 query）
+  // 打开自动查询（首次无数据时 action '' 自动 query，默认 kimi）
   mode = 'ok'
   let r = await h({ action: '', fields: {}, state: null, root: ROOT })
-  check('打开 → 自动查询成功', r.state.data && r.state.data.main.remaining === 81)
-  check('主额度渲染（剩 81 / 100 + 进度条）', r.html.indexOf('剩 81') >= 0 && r.html.indexOf('已用 19 / 100') >= 0 && r.html.indexOf('主额度') >= 0)
+  check('打开 → 默认提供商 kimi 自动查询成功', r.state.provider === 'kimi' && r.state.data && Array.isArray(r.state.data.windows))
+  check('提供商芯片行（三家）', r.html.indexOf('Kimi Coding') >= 0 && r.html.indexOf('DeepSeek') >= 0 && r.html.indexOf('Qwen Plan') >= 0)
+  check('主额度渲染（剩 81 / 100 + 进度条）', r.html.indexOf('剩 81') >= 0 && r.html.indexOf('已用 19 / 100') >= 0 && r.html.indexOf('主额度（每周重置）') >= 0)
   check('窗口渲染（300 分钟滑动，剩 97）', r.html.indexOf('300 分钟滑动') >= 0 && r.html.indexOf('剩 97') >= 0)
-  check('套餐/并发 pill（高级版 + 并发 2/30）', r.html.indexOf('高级版') >= 0 && r.html.indexOf('并发 2 / 30') >= 0)
+  check('套餐/并发（高级版 + 并发 2/30）', r.html.indexOf('高级版') >= 0 && r.html.indexOf('并发 2 / 30') >= 0)
   check('重置时间本地化', r.html.indexOf('重置：') >= 0 && r.html.indexOf('2026-08-21') >= 0)
-  check('加量包状态', r.html.indexOf('加量包未启用') >= 0)
 
-  // 手动刷新
+  // 切换 DeepSeek：立即查询并渲染余额
+  r = await h({ action: 'pick', fields: { __el: { v: 'deepseek' } }, state: r.state, root: ROOT })
+  check('切换 DeepSeek → state.provider 变更', r.state.provider === 'deepseek')
+  check('DeepSeek 余额渲染（总额/赠送/充值/币种）', r.html.indexOf('总 48.5') >= 0 && r.html.indexOf('赠送 8.5') >= 0 && r.html.indexOf('充值 40') >= 0 && r.html.indexOf('CNY') >= 0)
+  check('DeepSeek 账户状态（可用）', r.html.indexOf('账户状态：可用') >= 0)
+
+  // 切换 Qwen Plan：三层窗口
+  r = await h({ action: 'pick', fields: { __el: { v: 'qwen' } }, state: r.state, root: ROOT })
+  check('切换 Qwen → state.provider 变更', r.state.provider === 'qwen')
+  check('Qwen 套餐名渲染', r.html.indexOf('Token Plan 标准版') >= 0)
+  check('Qwen 三层窗口（5h/每周/每月）', r.html.indexOf('5 小时窗口') >= 0 && r.html.indexOf('每周额度') >= 0 && r.html.indexOf('每月额度') >= 0)
+  check('Qwen 窗口余量（5h 剩 89k）', r.html.indexOf('剩 89.0k') >= 0)
+
+  // 手动刷新（保持提供商与数据）
   r = await h({ action: 'query', fields: {}, state: r.state, root: ROOT })
-  check('刷新 → 保持数据', r.state.data && r.state.data.window.remaining === 97)
+  check('刷新 → 保持提供商与数据', r.state.provider === 'qwen' && r.state.data.windows.length === 3)
 
-  // 无 key
+  // 无 key（回 kimi 查询）
   mode = 'nokey'
-  r = await h({ action: 'query', fields: {}, state: null, root: ROOT })
+  r = await h({ action: 'pick', fields: { __el: { v: 'kimi' } }, state: null, root: ROOT })
   check('无 key → 错误 banner 提示凭据链', r.html.indexOf('KIMI_CODING_API_KEY') >= 0 && r.html.indexOf('tb-banner-error') >= 0)
 
   // HTTP 错误

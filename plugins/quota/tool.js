@@ -1,9 +1,12 @@
 // ===== quota-tool.js：API 配额查询（Host-only，经工具箱 RPC 注册）=====
-// 查询 Kimi for Coding（k3）套餐余量：主额度（周）+ 5 小时滑动窗口 + 并发上限。
-// 端点：GET https://api.kimi.com/coding/v1/usages（Authorization: Bearer KIMI_CODING_API_KEY）。
-// Key 凭据链：环境变量 → ~/.dsh/.credentials.yaml（与 jira 插件同款，Node 子进程读取，沙箱外）。
+// 多提供商配额/余额查询（提供商与数据接口分类参考 cc-switch 的用量查询模板）：
+//   · Kimi Coding（k3）：GET api.kimi.com/coding/v1/usages（官方 usages：周额度 + 5h 滑动窗口 + 并发）
+//   · DeepSeek：GET api.deepseek.com/user/balance（官方余额：总额 / 赠送 / 充值，is_available）
+//   · Qwen Token Plan（阿里云百炼）：POST bailian.console.aliyun.com/data/api.json?…queryCodingPlanInstanceInfoV2
+//     （端点与 5h/周/月窗口字段参考 CodexBar 文档；部分 CN 账号 API 模式可能要求控制台会话，失败时明示）
+// Key 凭据链：环境变量 → ~/.dsh/.credentials.yaml（键名随提供商，Node 子进程读取，沙箱外）。
 // 子进程跑 https 查询（插件求值器无 fetch/process；Node 走系统 TUN 代理可直连，curl 走 schannel 会被拒）。
-// 状态：{ loading, error, data, at }（data 是脱敏后的余量摘要，key 永不出子进程）
+// 状态：{ loading, error, data, at, provider }（data 是脱敏后的余量摘要，key 永不出子进程）
 // 注：查询走用户自己的 API Key，产生的是配额查询请求（轻量，不计入模型 token 用量）。
 
 return {
@@ -12,58 +15,115 @@ return {
   apply(ctx) {
     const subprocess = ctx.get('subprocess')
 
-    // 子进程脚本：读凭据 → 查 usages → 输出脱敏摘要 JSON。
-    // 数组 join 规避模板 \n 转义坑（PLUGIN-DEV.md 血泪）。
-    const QUOTA_SCRIPT = [
+    // 提供商表：id / 显示名 / 凭据键名（cc-switch 模板分类：Token Plan 套餐配额 + 第三方余额）
+    const PROVIDERS = [
+      { id: 'kimi', label: 'Kimi Coding', keyName: 'KIMI_CODING_API_KEY' },
+      { id: 'deepseek', label: 'DeepSeek', keyName: 'DEEPSEEK_API_KEY' },
+      { id: 'qwen', label: 'Qwen Plan · 百炼', keyName: 'QWEN_TOKEN_PLAN_CN_API_KEY' },
+    ]
+    const providerOf = (id) => {
+      for (const p of PROVIDERS) { if (p.id === id) return p }
+      return PROVIDERS[0]
+    }
+
+    // 子进程脚本：读凭据 → 按提供商查询 → 输出归一化 JSON（windows[] 配额窗口 / balances[] 余额）。
+    // 数组 join 规避模板 \n 转义坑（PLUGIN-DEV.md 血泪）；提供商 id/键名经 JSON.stringify 内联。
+    const scriptFor = (pid, keyName) => [
       "const https = require('https')",
       "const fs = require('fs')",
       "const os = require('os')",
       "const path = require('path')",
+      'const PID = ' + JSON.stringify(pid),
+      'const KEY_NAME = ' + JSON.stringify(keyName),
       "function readKey() {",
-      "  if (process.env.KIMI_CODING_API_KEY) return process.env.KIMI_CODING_API_KEY",
+      "  if (process.env[KEY_NAME]) return process.env[KEY_NAME]",
       "  try {",
       "    const f = path.join(os.homedir(), '.dsh', '.credentials.yaml')",
-      "    const m = fs.readFileSync(f, 'utf8').match(/^KIMI_CODING_API_KEY:\\s*(\\S+)\\s*$/m)",
+      "    const re = new RegExp('^' + KEY_NAME + ':\\\\s*(\\\\S+)\\\\s*$', 'm')",
+      "    const m = fs.readFileSync(f, 'utf8').match(re)",
       "    if (m) return m[1]",
       "  } catch (e) {}",
       "  return ''",
       "}",
+      "const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0) }",
+      "const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0 }",
       "const key = readKey()",
-      "if (!key) { process.stdout.write(JSON.stringify({ ok: false, error: '未找到 KIMI_CODING_API_KEY（环境变量或 ~/.dsh/.credentials.yaml）' })); process.exit(0) }",
-      "const req = https.request({ host: 'api.kimi.com', port: 443, path: '/coding/v1/usages', method: 'GET',",
-      "  headers: { Authorization: 'Bearer ' + key, 'User-Agent': 'KimiCLI/1.5' }, timeout: 20000 }, (res) => {",
-      "  let body = ''",
-      "  res.on('data', (c) => body += c)",
-      "  res.on('end', () => {",
-      "    try {",
-      "      const j = JSON.parse(body)",
-      "      if (res.statusCode !== 200) { process.stdout.write(JSON.stringify({ ok: false, error: 'HTTP ' + res.statusCode + ': ' + (j.error && j.error.message || body.slice(0, 200)) })); return }",
-      "      const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0 }",
+      "if (!key) out({ ok: false, error: '未找到 ' + KEY_NAME + '（环境变量或 ~/.dsh/.credentials.yaml）' })",
+      "function req(o) { return new Promise((resolve) => {",
+      "  const r = https.request({ host: o.host, port: 443, path: o.path, method: o.method, timeout: 20000, headers: o.headers }, (res) => {",
+      "    let body = ''",
+      "    res.on('data', (c) => body += c)",
+      "    res.on('end', () => {",
+      "      let j = null",
+      "      try { j = JSON.parse(body) } catch (e) {}",
+      "      resolve({ status: res.statusCode, json: j, raw: body })",
+      "    })",
+      "  })",
+      "  r.on('error', (e) => resolve({ status: 0, error: '网络错误: ' + e.message }))",
+      "  r.on('timeout', () => { r.destroy(); resolve({ status: 0, error: '请求超时（20s）' }) })",
+      "  if (o.body) r.write(o.body)",
+      "  r.end()",
+      "})}",
+      "(async () => {",
+      "  try {",
+      // ---- Kimi Coding：官方 usages（周额度 + 滑动窗口 + 并发）----
+      "    if (PID === 'kimi') {",
+      "      const r = await req({ host: 'api.kimi.com', path: '/coding/v1/usages', method: 'GET', headers: { Authorization: 'Bearer ' + key, 'User-Agent': 'KimiCLI/1.5' } })",
+      "      if (r.error) out({ ok: false, error: r.error })",
+      "      const j = r.json || {}",
+      "      if (r.status !== 200) out({ ok: false, error: 'HTTP ' + r.status + ': ' + ((j.error && j.error.message) || (r.raw || '').slice(0, 200)) })",
       "      const usage = j.usage || {}",
       "      const win = (j.limits && j.limits[0] && j.limits[0].detail) || {}",
       "      const winInfo = (j.limits && j.limits[0] && j.limits[0].window) || {}",
-      "      process.stdout.write(JSON.stringify({ ok: true, data: {",
-      "        level: (j.user && j.user.membership && j.user.membership.level) || '',",
-      "        region: (j.user && j.user.region) || '',",
-      "        main: { limit: num(usage.limit), used: num(usage.used), remaining: num(usage.remaining), resetTime: usage.resetTime || '' },",
-      "        window: { limit: num(win.limit), used: num(win.used), remaining: num(win.remaining), resetTime: win.resetTime || '', durationMin: num(winInfo.duration) },",
-      "        parallel: num(j.parallel && j.parallel.limit),",
-      "        parallelActive: (j.parallel && Array.isArray(j.parallel.details) ? j.parallel.details.length : 0),",
-      "        booster: (j.boosterWallet && j.boosterWallet.status) || ''",
-      "      } }))",
-      "    } catch (e) { process.stdout.write(JSON.stringify({ ok: false, error: '解析失败: ' + String((e && e.message) || e) })) }",
-      "  })",
-      "})",
-      "req.on('error', (e) => { process.stdout.write(JSON.stringify({ ok: false, error: '网络错误: ' + e.message })) })",
-      "req.on('timeout', () => { req.destroy(); process.stdout.write(JSON.stringify({ ok: false, error: '请求超时（20s）' })) })",
-      "req.end()",
+      "      out({ ok: true, data: {",
+      "        plan: (j.user && j.user.membership && j.user.membership.level) || '',",
+      "        windows: [",
+      "          { label: '主额度（每周重置）', used: num(usage.used), total: num(usage.limit), resetTime: usage.resetTime || '' },",
+      "          { label: '限流窗口（' + (num(winInfo.duration) || 300) + ' 分钟滑动）', used: num(win.used), total: num(win.limit), resetTime: win.resetTime || '' },",
+      "        ],",
+      "        extra: '并发 ' + ((j.parallel && Array.isArray(j.parallel.details)) ? j.parallel.details.length : 0) + ' / ' + num(j.parallel && j.parallel.limit) + ((j.boosterWallet && j.boosterWallet.status && j.boosterWallet.status !== 'STATUS_DISABLED') ? ' · 加量包已启用' : '')",
+      "      } })",
+      "    }",
+      // ---- DeepSeek：官方余额（is_available + 各币种总额/赠送/充值）----
+      "    else if (PID === 'deepseek') {",
+      "      const r = await req({ host: 'api.deepseek.com', path: '/user/balance', method: 'GET', headers: { Authorization: 'Bearer ' + key, Accept: 'application/json' } })",
+      "      if (r.error) out({ ok: false, error: r.error })",
+      "      const j = r.json || {}",
+      "      if (r.status !== 200) out({ ok: false, error: 'HTTP ' + r.status + ': ' + ((j.error && j.error.message) || (r.raw || '').slice(0, 200)) })",
+      "      const infos = Array.isArray(j.balance_infos) ? j.balance_infos : []",
+      "      out({ ok: true, data: {",
+      "        available: !!j.is_available,",
+      "        balances: infos.map((b) => ({ currency: b.currency || '', total: num(b.total_balance), granted: num(b.granted_balance), toppedUp: num(b.topped_up_balance) }))",
+      "      } })",
+      "    }",
+      // ---- Qwen Token Plan（阿里云百炼 Coding Plan）：5h/周/月 三层窗口 ----
+      "    else if (PID === 'qwen') {",
+      "      const qPath = '/data/api.json?action=zeldaEasy.broadscope-bailian.codingPlan.queryCodingPlanInstanceInfoV2&product=broadscope-bailian&api=queryCodingPlanInstanceInfoV2'",
+      "      const r = await req({ host: 'bailian.console.aliyun.com', path: qPath, method: 'POST', body: '{}', headers: { Authorization: 'Bearer ' + key, 'x-api-key': key, 'X-DashScope-API-Key': key, 'Content-Type': 'application/json', Accept: 'application/json' } })",
+      "      if (r.error) out({ ok: false, error: r.error })",
+      "      if (r.status !== 200) out({ ok: false, error: 'HTTP ' + r.status + ': ' + (r.raw || '').slice(0, 200) })",
+      "      const j = r.json || {}",
+      "      const datas = j.data || {}",
+      "      const infos = Array.isArray(datas.codingPlanInstanceInfos) ? datas.codingPlanInstanceInfos : []",
+      "      if (!infos.length) out({ ok: false, error: '未返回套餐信息（部分 CN 账号 API 模式要求控制台会话——CodexBar 同款已知限制）' })",
+      "      const inst = infos[0] || {}",
+      "      const q = inst.codingPlanQuotaInfo || datas.codingPlanQuotaInfo || {}",
+      "      const wins = []",
+      "      if (num(q.per5HourTotalQuota)) wins.push({ label: '5 小时窗口', used: num(q.per5HourUsedQuota), total: num(q.per5HourTotalQuota), resetTime: q.per5HourQuotaNextRefreshTime || '' })",
+      "      if (num(q.perWeekTotalQuota)) wins.push({ label: '每周额度', used: num(q.perWeekUsedQuota), total: num(q.perWeekTotalQuota), resetTime: q.perWeekQuotaNextRefreshTime || '' })",
+      "      if (num(q.perBillMonthTotalQuota)) wins.push({ label: '每月额度', used: num(q.perBillMonthUsedQuota), total: num(q.perBillMonthTotalQuota), resetTime: q.perBillMonthQuotaNextRefreshTime || '' })",
+      "      out({ ok: true, data: { plan: inst.planName || inst.instanceName || inst.packageName || '', windows: wins } })",
+      "    }",
+      "  } catch (e) { out({ ok: false, error: '查询异常: ' + String((e && e.message) || e) }) }",
+      "})()",
     ].join('\n')
 
-    const runQuery = async (wsRoot) => {
+    const runQuery = async (wsRoot, pid) => {
       if (!subprocess) return { ok: false, error: 'subprocess 服务不可用' }
+      const p = providerOf(pid)
       try {
         const handle = subprocess.spawn({
-          argv: ['node', '-e', QUOTA_SCRIPT],
+          argv: ['node', '-e', scriptFor(p.id, p.keyName)],
           cwd: wsRoot,
           stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 }, stderr: { maxBytes: 16 * 1024 } },
           graceMs: 30000,
@@ -88,11 +148,24 @@ return {
     const fmtTime = (iso) => {
       if (!iso) return '—'
       try {
-        const d = new Date(iso)
-        if (isNaN(d.getTime())) return iso
+        // 兼容 ISO 字符串与数字时间戳（秒/毫秒，百炼窗口刷新时间是 epoch）
+        let d
+        if (typeof iso === 'number' || /^\d{10,}$/.test(String(iso))) {
+          let n = Number(iso)
+          if (n < 1e12) n *= 1000
+          d = new Date(n)
+        } else {
+          d = new Date(iso)
+        }
+        if (isNaN(d.getTime())) return String(iso)
         const p2 = (n) => (n < 10 ? '0' : '') + n
         return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes())
-      } catch (e) { return iso }
+      } catch (e) { return String(iso) }
+    }
+    const fmtNum = (n) => {
+      const v = Number(n)
+      if (!isFinite(v)) return String(n)
+      return v >= 10000 ? (v / 1000).toFixed(1) + 'k' : String(v)
     }
     const bar = (used, limit) => {
       if (!limit) return ''
@@ -101,46 +174,55 @@ return {
         '<div style="height:100%;width:' + pct + '%;background:var(--tb-accent,#3f6fd9);transition:width .2s"></div></div>'
     }
 
+    // 配额窗口卡片（统一模型：label + 剩余 pill + 进度条 + 重置时间）
+    const windowCard = (w) => {
+      const remaining = Math.max(0, (w.total || 0) - (w.used || 0))
+      return '<div class="tb-card"><div class="tb-sec"><span class="tb-sec-label">' + esc(w.label) + '</span>' +
+        '<div class="tb-row"><span class="tb-pill tb-pill-' + levelOf(remaining, w.total) + '">剩 ' + fmtNum(remaining) + '</span>' +
+        '<span class="tb-note">已用 ' + fmtNum(w.used) + ' / ' + fmtNum(w.total) + '</span></div>' +
+        '<div class="tb-row">' + bar(w.used, w.total) + '</div>' +
+        '<div class="tb-note">重置：' + esc(fmtTime(w.resetTime)) + '（本地）</div>' +
+      '</div></div>'
+    }
+
+    const LEVEL_LABEL = { LEVEL_ADVANCED: '高级版', LEVEL_BASIC: '基础版', LEVEL_FREE: '免费版' }
+
     const render = (st) => {
-      const parts = []
-      // Tab 角标：有数据时显示主额度余量（借鉴 better-sidebar tab 角标）
-      parts.push('<div class="jr-tabpanel tb-root" data-tab-badge="' + (st.data ? String(st.data.main.remaining) : '') + '">')
-      parts.push('<div class="tb-row">' +
-        '<button type="button" class="tb-btn tb-btn-primary" data-action="query"' + (st.loading ? ' disabled' : '') + '>' + (st.loading ? '查询中…' : '刷新') + '</button>' +
-        (st.at ? '<span class="tb-note">更新于 ' + esc(st.at) + '</span>' : '') +
-        '<span class="tb-note">Kimi for Coding（k3）· 数据来自官方 usages 接口</span>' +
-      '</div>')
-      if (st.error) parts.push('<div class="tb-banner tb-banner-error">' + esc(st.error) + '</div>')
+      const p = providerOf(st.provider)
       const d = st.data
+      // Tab 角标：第一窗口剩余量 / 余额总值
+      let badge = ''
+      if (d && Array.isArray(d.windows) && d.windows.length) badge = fmtNum(Math.max(0, (d.windows[0].total || 0) - (d.windows[0].used || 0)))
+      else if (d && Array.isArray(d.balances) && d.balances.length) badge = fmtNum(d.balances[0].total)
+      const parts = []
+      parts.push('<div class="jr-tabpanel tb-root" data-tab-badge="' + esc(badge) + '">')
+      // 提供商选择芯片 + 刷新
+      parts.push('<div class="tb-row">' +
+        PROVIDERS.map((pv) => '<button type="button" class="tb-chip' + (pv.id === p.id ? ' tb-chip-on' : '') + '" data-action="pick" data-v="' + pv.id + '">' + esc(pv.label) + '</button>').join('') +
+        '<button type="button" class="tb-btn tb-btn-sm tb-btn-primary" data-action="query"' + (st.loading ? ' disabled' : '') + '>' + (st.loading ? '查询中…' : '刷新') + '</button>' +
+      '</div>')
+      parts.push('<div class="tb-row"><span class="tb-note">凭据键 ' + p.keyName + '（环境变量 / ~/.dsh/.credentials.yaml）</span>' +
+        (st.at ? '<span class="tb-note">更新于 ' + esc(st.at) + '</span>' : '') + '</div>')
+      if (st.error) parts.push('<div class="tb-banner tb-banner-error">' + esc(st.error) + '</div>')
       if (d) {
-        // 主额度（周）
-        parts.push('<div class="tb-card"><div class="tb-sec"><span class="tb-sec-label">主额度（每周重置）</span>' +
-          '<div class="tb-row"><span class="tb-pill tb-pill-' + levelOf(d.main.remaining, d.main.limit) + '">剩 ' + d.main.remaining + '</span>' +
-          '<span class="tb-note">已用 ' + d.main.used + ' / ' + d.main.limit + '</span></div>' +
-          '<div class="tb-row">' + bar(d.main.used, d.main.limit) + '</div>' +
-          '<div class="tb-note">重置：' + esc(fmtTime(d.main.resetTime)) + '（本地）</div>' +
-        '</div></div>')
-        // 5 小时滑动窗口
-        parts.push('<div class="tb-card"><div class="tb-sec"><span class="tb-sec-label">限流窗口（' + (d.window.durationMin || 300) + ' 分钟滑动）</span>' +
-          '<div class="tb-row"><span class="tb-pill tb-pill-' + levelOf(d.window.remaining, d.window.limit) + '">剩 ' + d.window.remaining + '</span>' +
-          '<span class="tb-note">已用 ' + d.window.used + ' / ' + d.window.limit + '</span></div>' +
-          '<div class="tb-row">' + bar(d.window.used, d.window.limit) + '</div>' +
-          '<div class="tb-note">重置：' + esc(fmtTime(d.window.resetTime)) + '（本地）</div>' +
-        '</div></div>')
-        // 其他信息
-        const LEVEL_LABEL = { LEVEL_ADVANCED: '高级版', LEVEL_BASIC: '基础版', LEVEL_FREE: '免费版' }
-        parts.push('<div class="tb-card"><div class="tb-sec"><span class="tb-sec-label">套餐</span>' +
-          '<div class="tb-pills">' +
-            '<span class="tb-pill tb-pill-active">' + esc(LEVEL_LABEL[d.level] || d.level || '未知') + '</span>' +
-            '<span class="tb-pill tb-pill-plain">并发 ' + d.parallelActive + ' / ' + d.parallel + '</span>' +
-            (d.booster && d.booster !== 'STATUS_DISABLED'
-              ? '<span class="tb-pill tb-pill-done">加量包已启用</span>'
-              : '<span class="tb-pill tb-pill-plain">加量包未启用</span>') +
-          '</div>' +
-          '<div class="tb-note" style="margin-top:6px">双层限流：周额度 + 滑动窗口，任一耗尽触发 429。额度查询本身不计模型 token。</div>' +
-        '</div></div>')
+        if (d.plan) {
+          parts.push('<div class="tb-pills"><span class="tb-pill tb-pill-active">' + esc(LEVEL_LABEL[d.plan] || d.plan) + '</span>' +
+            (d.extra ? '<span class="tb-pill tb-pill-plain">' + esc(d.extra) + '</span>' : '') + '</div>')
+        }
+        if (Array.isArray(d.windows)) for (const w of d.windows) parts.push(windowCard(w))
+        if (Array.isArray(d.balances)) {
+          for (const b of d.balances) {
+            parts.push('<div class="tb-card"><div class="tb-sec"><span class="tb-sec-label">余额（' + esc(b.currency || '币种') + '）</span>' +
+              '<div class="tb-row"><span class="tb-pill tb-pill-' + (b.total > 5 ? 'done' : b.total > 1 ? 'other' : 'warn') + '">总 ' + fmtNum(b.total) + '</span>' +
+              '<span class="tb-note">赠送 ' + fmtNum(b.granted) + ' · 充值 ' + fmtNum(b.toppedUp) + '</span></div>' +
+            '</div></div>')
+          }
+          parts.push('<div class="tb-note">账户状态：' + (d.available ? '可用' : '不可用（余额不足或已停用）') + '</div>')
+        }
+        if (!d.windows && !d.balances) parts.push('<div class="tb-notice">该提供商未返回配额窗口</div>')
+        if (p.id === 'kimi') parts.push('<div class="tb-note">双层限流：周额度 + 滑动窗口，任一耗尽触发 429。额度查询本身不计模型 token。</div>')
       } else if (!st.error && !st.loading) {
-        parts.push('<div class="tb-notice">点「刷新」查询 Kimi for Coding 套餐余量（主额度 / 限流窗口 / 并发）</div>')
+        parts.push('<div class="tb-notice">点「刷新」查询 ' + esc(p.label) + ' 配额/余额</div>')
       }
       parts.push('</div>')
       return parts.join('')
@@ -148,11 +230,20 @@ return {
 
     const handler = async ({ action, fields, state, root, session }) => {
       const ws = resolveWorkspace(ctx, root, session)
-      const st = (state && typeof state === 'object' && state) ? state : { loading: false, error: null, data: null, at: null }
+      const st = (state && typeof state === 'object' && state) ? state : { loading: false, error: null, data: null, at: null, provider: 'kimi' }
+      if (!providerOf(st.provider).id || PROVIDERS.every((p) => p.id !== st.provider)) st.provider = 'kimi'
+      const el = fields && fields.__el ? fields.__el : {}
 
+      if (action === 'pick' && el.v) {
+        // 切换提供商：清空旧数据并立即查询新提供商
+        st.provider = String(el.v)
+        st.data = null
+        st.error = null
+        action = 'query'
+      }
       if (action === 'query' || (action === '' && !st.data && !st.error)) {
         st.loading = true
-        const r = await runQuery(ws.root)
+        const r = await runQuery(ws.root, st.provider)
         st.loading = false
         if (r && r.ok) {
           st.data = r.data

@@ -17,6 +17,7 @@ return {
 
     // ---- 会话日志读取缓存（主会话 + 每个子代理会话各一个读取器，避免缓存抖动）----
     const readers = {}
+    const growth = {} // sid → 上次渲染的日志条数：本轮条数增长 = 会话活跃（助手卡流光判定用）
     const readLog = async (sid) => {
       if (!sq) return { events: [], count: 0 }
       if (!readers[sid]) readers[sid] = makeSessionLogReader(ctx, sq)
@@ -83,9 +84,17 @@ return {
     const parseItems = (events) => {
       const items = []
       const byCallId = {}
+      let route = '' // 最近 request/header 的 provider/model，贴给后续助手消息卡
+      let curTurn = null // 最近 turn/start 的轮次：user/message 不带 turn，用它推算归属
       for (const ev of events) {
         if (!ev || typeof ev.seq !== 'number') continue
         const d = ev.data || {}
+        if (ev.type === 'turn/start') { if (typeof d.turn === 'number') curTurn = d.turn; continue }
+        if (ev.type === 'request/header') {
+          const cfg = d.header && d.header.config
+          if (cfg && cfg.model) route = (cfg.provider ? cfg.provider + '/' : '') + cfg.model
+          continue
+        }
         if (ev.type === 'tool/call') {
           const it = {
             kind: 'call', seq: ev.seq, time: ev.time, turn: d.turn, step: d.step,
@@ -120,11 +129,11 @@ return {
           const preview = oneLine(textOf(d.content), 110)
           // 空内容的上下文注入（subagent-settled 占位等）是噪声，不进流程图
           if (src !== 'user' && !preview) continue
-          items.push({ kind: 'msg', role: src === 'user' ? 'user' : 'inject', seq: ev.seq, time: ev.time, preview })
+          items.push({ kind: 'msg', role: src === 'user' ? 'user' : 'inject', seq: ev.seq, time: ev.time, turn: curTurn, preview, full: textOf(d.content) })
         } else if (ev.type === 'assistant/message') {
           const m = d.message || {}
           const u = d.usage || null
-          items.push({ kind: 'msg', role: 'ai', seq: ev.seq, time: ev.time, preview: oneLine(textOf(m.content), 110) || '（工具调用）', tok: u ? (u.outputTokens || 0) : null })
+          items.push({ kind: 'msg', role: 'ai', seq: ev.seq, time: ev.time, turn: typeof d.turn === 'number' ? d.turn : curTurn, preview: oneLine(textOf(m.content), 110) || '（工具调用）', full: textOf(m.content), tok: u ? (u.outputTokens || 0) : null, route })
         }
       }
       return items
@@ -227,39 +236,46 @@ return {
         '</div>'
     }
 
-    // 助手消息 + 紧跟的同步调用组 → 合并为一行泳道（中=助手卡，右=每调用 连线对+工具卡）
-    const renderCallBlock = (aiIt, node, expandedSeq) => {
-      const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
-      return '<div class="fl-lane"><div></div>' +
-        '<div class="fl-lane-main">' + msgCardInner(aiIt) + '</div>' +
-        '<div class="fl-lane-side">' + units + '</div>' +
-      '</div>'
+    // 同一步骤的多个并行调用（>1）用虚线外框 + 「并行 ×N」角标圈成一组；单调用保持散卡
+    const grpSide = (node, units) => {
+      const n = node.calls.length
+      if (n < 2) return '<div class="fl-lane-side">' + units + '</div>'
+      return '<div class="fl-lane-side fl-grp"><span class="fl-grp-tag">并行 ×' + n + '</span>' + units + '</div>'
     }
 
-    // 孤立调用组（前无助手消息，如连续工具步）：中列画主干竖线贯穿，保持泳道节奏
+    // 泳道中列包装：连接符（▼ 上方空隙由 ::before 主干线自适应填满，▼ 贴内容顶）+ 内容 + 对称弹性空间
+    // —— 卡片保持垂直居中，▼ 始终落在「上一张卡 → 这一张卡」的空隙底端（先线后箭头）；可视首行不加（顶部不悬空）
+    const connMain = (content, withConn) =>
+      (withConn ? '<div class="fl-conn"><span class="fl-arrow">▼</span></div>' : '') +
+      content +
+      (withConn ? '<span class="fl-conn-gap"></span>' : '')
+
+    // 孤立调用组（前无助手消息，如连续工具步）：中列只画主干竖线贯穿——无卡的行不放 ▼ 连接符（线本身即连续性）
     const renderPar = (node, expandedSeq) => {
       const units = node.calls.map((c) => renderCallWire(c, expandedSeq)).join('')
       return '<div class="fl-lane"><div></div>' +
         '<div class="fl-lane-main"><span class="fl-lane-line"></span></div>' +
-        '<div class="fl-lane-side">' + units + '</div>' +
+        grpSide(node, units) +
       '</div>'
     }
 
-    const msgCardInner = (it) => {
+    const msgCardInner = (it, expandedSeq, live) => {
       const isUser = it.role === 'user'
       const isAi = it.role === 'ai'
       const color = isUser ? 'var(--tb-done-text,#81c784)' : isAi ? 'var(--tb-active-text,#7fa7f0)' : 'var(--tb-text-3,#777884)'
       const label = isUser ? '用户' : isAi ? '助手' : '注入'
       // 卡片统一面片底色（fl-node），角色色只落在左侧色条 + 几何符号/tag 上，避免整卡彩色半透明的杂乱感
-      return '<div class="fl-node" style="border-left-color:' + color + '">' +
+      // 用户/助手/注入卡均可点开右侧详情浮层看完整内容（与工具卡同一交互）；live=进行中 → 与工具卡同款流光脉冲
+      return '<div class="fl-node' + (expandedSeq === it.seq ? ' fl-on' : '') + (live ? ' fl-live' : '') + '" style="border-left-color:' + color + '" data-action="fdetail" data-seq="' + it.seq + '" title="点击查看完整消息">' +
         '<div class="fl-node-head"><span class="fl-glyph" style="color:' + color + '">' + (isUser ? '▲' : isAi ? '◆' : '■') + '</span><span class="fl-tag" style="color:' + color + '">' + label + '</span>' +
+        (isAi && it.route ? '<span class="fl-model">' + esc(it.route) + '</span>' : '') +
         (fmtTime(it.time) ? '<span class="fl-time">' + fmtTime(it.time) + '</span>' : '') +
         (it.tok ? '<span class="fl-time">+' + it.tok + ' tok</span>' : '') + '</div>' +
         '<div class="fl-preview">' + esc(it.preview || '（空）') + '</div>' +
       '</div>'
     }
 
-    const renderMsg = (it) => '<div class="fl-lane"><div></div><div class="fl-lane-main">' + msgCardInner(it) + '</div><div></div></div>'
+    const renderMsg = (it, expandedSeq, withConn, live) => '<div class="fl-lane"><div></div><div class="fl-lane-main">' + connMain(msgCardInner(it, expandedSeq, live), withConn) + '</div><div></div></div>'
 
     // 完整详情 → 右侧浮层（不插入流程流撑高内容：展开/收起零跳跃，滚动位置不动）：
     // 完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）；头部 ✕ 或再点卡片关闭
@@ -277,6 +293,26 @@ return {
         '<div class="fl-rail-body">' +
           '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入' + (input.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(inShown) + '</pre></div>' +
           '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
+        '</div>' +
+      '</div>'
+    }
+
+    // 消息详情浮层（用户/助手/注入卡点击）：角色 + 时间/模型/tokens 元信息 + 完整内容（截断标注）
+    const msgRail = (it, anim) => {
+      const label = it.role === 'user' ? '用户消息' : it.role === 'ai' ? '助手消息' : '注入消息'
+      const cap = 8000
+      const full = String(it.full || it.preview || '')
+      const shown = full.length > cap ? full.slice(0, cap) + '\n…（截断，共 ' + full.length + ' 字符）' : full
+      const meta = []
+      if (fmtTime(it.time)) meta.push('时间 ' + fmtTime(it.time))
+      if (it.route) meta.push('模型 ' + it.route)
+      if (it.tok) meta.push('输出 +' + it.tok + ' tok')
+      return '<div class="fl-rail' + (anim ? ' fl-rail-anim' : '') + '">' +
+        '<div class="fl-rail-head"><span class="fl-rail-title">' + label + ' · 详情</span>' +
+        '<button type="button" class="fl-rail-x" data-action="fdetail" data-seq="' + it.seq + '" title="关闭详情">✕</button></div>' +
+        '<div class="fl-rail-body">' +
+          (meta.length ? '<div class="fl-sec"><span class="fl-sec-label">' + esc(meta.join(' · ')) + '</span></div>' : '') +
+          '<div class="fl-sec"><span class="fl-sec-label">完整内容' + (full.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(shown || '（空）') + '</pre></div>' +
         '</div>' +
       '</div>'
     }
@@ -316,13 +352,18 @@ return {
       return sub
     }
 
-    const ARROW = '<div class="fl-lane"><div></div><div class="fl-lane-main"><span class="fl-arrow">▼</span></div><div></div></div>'
-
     const render = async (st, sid) => {
       const r = await readLog(sid)
+      // 活跃度：日志条数较上轮渲染增长 = 会话正在工作（用于助手卡流光；静止会话/他人会话不误亮）
+      const prevCount = growth[sid]
+      const active = prevCount != null && (r.count || 0) > prevCount
+      growth[sid] = r.count || 0
       await loadManifestTools()
       const items = parseItems(r.events || [])
       const nodes = buildNodes(items)
+      // 活跃且最新事件是一条助手消息 → 该助手卡流光（正在生成下一步）
+      const lastIt = items.length ? items[items.length - 1] : null
+      const liveAiSeq = active && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' ? lastIt.seq : null
       const CAP = 60
       const shown = nodes.slice(-CAP)
       const parts = []
@@ -334,8 +375,9 @@ return {
         '<span class="tb-note">' + esc(sid.replace(/^session-/, '').slice(0, 8)) + ' · ' + items.length + ' 条事件 · ' + nodes.length + ' 节点</span>' +
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
+        '<button type="button" class="tb-btn tb-btn-sm" data-action="jump-latest" title="滚动到最新（底部）；与右下角浮标同一动作">↓ 最新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点卡片在右侧看完整传入/返回</div>')
+      parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点工具卡看完整传入/返回，点消息卡看完整内容</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
@@ -348,45 +390,51 @@ return {
         const rows = []
         for (let i = 0; i < shown.length; i++) {
           const n = shown[i]
+          const withConn = rows.length > 0 // 可视首行（最老）不画连接符
           let h
-          // 助手消息紧跟同步调用组 → 合并为一行（中=助手卡，右=连线+工具卡）
-          if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'par') {
-            h = renderCallBlock(n.it, shown[i + 1], st.expanded)
-            i++
-          } else if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'sub') {
-            // 助手消息紧跟子代理 → 合并为分支块：左列=入口/支线/出口，中列=主干消息串
-            const subN = shown[i + 1]
-            const call = subN.call
-            let main = msgCardInner(n.it)
-            let lastI = i + 1 // 至少消费到 sub 节点
-            if (call.resSeq != null) {
+          // 助手消息后紧跟的同步骤节点统一归并：普通调用组(par)与子代理(sub)任意顺序/兼有都并进同一行
+          // —— 左=分支、中=助手卡、右=工具组（此前 par/sub 只认单一模式，混合步骤会把子代理落单到下一行导致分支错位）
+          if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && (shown[i + 1].t === 'par' || shown[i + 1].t === 'sub')) {
+            let parN = null, subN = null, subIdx = -1, next = i + 1
+            if (shown[next] && shown[next].t === 'par') { parN = shown[next]; next++ }
+            if (shown[next] && shown[next].t === 'sub') { subN = shown[next]; subIdx = next; next++ }
+            if (!parN && shown[next] && shown[next].t === 'par') { parN = shown[next]; next++ }
+            const call = subN ? subN.call : null
+            // 进行中判定：工具组有 pending / 子代理还在跑 / 该助手消息正活跃
+            const aiLive = (parN && parN.calls.some((c) => c.status === 'pending')) || (call && call.status === 'pending') || n.it.seq === liveAiSeq
+            let main = msgCardInner(n.it, st.expanded, aiLive)
+            let lastI = next - 1
+            if (call && call.resSeq != null) {
               // 已完成：中列从卡A 起 ▼ 串到「结果之后的第一条消息」（出口卡贴底与其对齐）；
-              // 中间的注入/用户消息依次串入；遇工具组/子代理则止（不跨合并）
-              for (let j = i + 2; j < shown.length; j++) {
+              // 合并边界按轮次（turn）——只吞同轮消息，下一轮的用户/助手消息回到独立行（对齐基准）
+              for (let j = next; j < shown.length; j++) {
                 const m = shown[j]
                 if (m.t !== 'msg') break
-                main += '<span class="fl-arrow">▼</span>' + msgCardInner(m.it)
+                if (call.turn != null && m.it.turn != null && m.it.turn !== call.turn) break
+                main += '<span class="fl-arrow">▼</span>' + msgCardInner(m.it, st.expanded, m.it.seq === liveAiSeq)
                 lastI = j
                 if (m.it.seq > call.resSeq) break
               }
             }
-            h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i + 1] || '') + '</div><div class="fl-lane-main">' + main + '</div><div></div></div>'
+            h = '<div class="fl-lane">' +
+              (subN ? '<div class="fl-subcol">' + (subHtmls[subIdx] || '') + '</div>' : '<div></div>') +
+              '<div class="fl-lane-main">' + connMain(main, withConn) + '</div>' +
+              (parN ? grpSide(parN, parN.calls.map((c) => renderCallWire(c, st.expanded)).join('')) : '<div></div>') +
+            '</div>'
             i = lastI
-          } else if (n.t === 'msg') h = renderMsg(n.it)
+          } else if (n.t === 'msg') h = renderMsg(n.it, st.expanded, withConn, n.it.seq === liveAiSeq)
           else if (n.t === 'par') h = renderPar(n, st.expanded)
           else h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i] || '') + '</div><div class="fl-lane-main"><span class="fl-lane-line"></span></div><div></div></div>'
           rows.push(h)
-          rows.push(ARROW)
         }
-        if (rows.length && rows[rows.length - 1] === ARROW) rows.pop()
         if (nodes.length > CAP) rows.push('<div class="tb-notice">仅显示最近 ' + CAP + ' 个节点（更早 ' + (nodes.length - CAP) + ' 个未加载）</div>')
         parts.push(rows.reverse().join(''))
       }
       parts.push('</div>')
-      // 详情右侧浮层：展开状态且目标调用仍在可视事件集内时渲染（absolute 覆盖右缘，流程流不动）
+      // 详情右侧浮层：展开状态且目标仍在可视事件集内时渲染（工具调用→传入/返回；消息→完整内容）
       if (st.expanded != null) {
-        const target = items.find((it) => it.kind === 'call' && it.seq === st.expanded)
-        if (target) parts.push(detailRail(target, st.freshSeq === target.seq))
+        const target = items.find((it) => it.seq === st.expanded && (it.kind === 'call' || it.kind === 'msg'))
+        if (target) parts.push(target.kind === 'call' ? detailRail(target, st.freshSeq === target.seq) : msgRail(target, st.freshSeq === target.seq))
       }
       delete st.freshSeq // 一次性动画标记，不残留进 state
       parts.push('</div>')

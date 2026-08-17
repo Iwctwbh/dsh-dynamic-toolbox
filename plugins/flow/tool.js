@@ -5,8 +5,9 @@
 //   · 子代理（subagent/workflow/ralph）：git 树形式——从主干 ├─ 分出支线，支线内实时展示子会话事件流，╰─ 合并回主干
 //   · 插件/技能/MCP/命令/文件 等普通工具调用：同一步骤内的多个调用 → 平行卡片并排（调用并返回成组）
 // 实时：面板根带 data-autorefresh="2000"，框架抽屉每 2s 静默重拉（live 开关可暂停）。
+// 钻取：点子代理分支「进入 →」切换到该子会话的流程图（当前会话压 crumbs 栈，「← 返回」逐级退回）。
 // 数据源：sessionQuery（makeSessionLogReader 缓存；子代理会话按 id 各自缓存读取器）。
-// 状态：{ live, sid }（轻量标量；事件本体与流程模型每次动作重建，不进 state）
+// 状态：{ live, sid, home, expanded, crumbs }（轻量标量；事件本体与流程模型每次动作重建，不进 state）
 
 return {
   name: 'flow-tool',
@@ -328,7 +329,8 @@ return {
       let steps = ''
       if (cid) {
         const sub2 = await childRows(cid, 10)
-        steps += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') + '</div>'
+        steps += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') +
+          '<button type="button" class="tb-btn tb-btn-sm" data-action="fenter" data-seq="' + c.seq + '" title="进入该子代理的完整流程图（可逐级返回）">进入 →</button></div>'
         for (const r of sub2.rows) {
           steps += '<div class="fl-sub-step">' +
             (r.pill ? '<span class="fl-branch-pill">' + esc(r.pill) + '</span>' : '') +
@@ -370,14 +372,18 @@ return {
       parts.push('<div class="jr-tabpanel tb-root tb-pane" data-flow data-autorefresh="' + (st.live ? '2000' : '') + '" data-tab-badge="' + (st.live ? String(nodes.length) : '') + '">')
       // 固定头
       parts.push('<div class="tb-pane-head">')
+      // 钻取态：查看的不是面板所属会话 → 头部给「← 返回」+ 层级标注（crumbs 栈深度）
+      const drilled = !!(st.home && sid !== st.home)
+      const depth = drilled && Array.isArray(st.crumbs) ? st.crumbs.length : 0
       parts.push('<div class="tb-row">' +
-        '<span class="tb-sec-label">实时流程</span>' +
-        '<span class="tb-note">' + esc(sid.replace(/^session-/, '').slice(0, 8)) + ' · ' + items.length + ' 条事件 · ' + nodes.length + ' 节点</span>' +
+        (drilled ? '<button type="button" class="tb-btn tb-btn-sm" data-action="fback" title="返回上一级流程图">← 返回</button>' : '') +
+        '<span class="tb-sec-label">' + (drilled ? '子代理流程' : '实时流程') + '</span>' +
+        '<span class="tb-note">' + esc(sid.replace(/^session-/, '').slice(0, 8)) + ' · ' + items.length + ' 条事件 · ' + nodes.length + ' 节点' + (drilled ? ' · 第 ' + (depth + 1) + ' 层' : '') + '</span>' +
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="jump-latest" title="滚动到最新（底部）；与右下角浮标同一动作">↓ 最新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点工具卡看完整传入/返回，点消息卡看完整内容</div>')
+      parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点工具卡看完整传入/返回，点消息卡看完整内容；点子代理分支「进入 →」钻取该子会话的完整流程图</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
@@ -443,18 +449,36 @@ return {
 
     const handler = async ({ action, fields, state, session }) => {
       if (!sq) return { ok: false, error: 'sessionQuery 服务不可用', html: '' }
-      const st = (state && typeof state === 'object' && state) ? state : { live: true, sid: null, expanded: null }
+      const st = (state && typeof state === 'object' && state) ? state : { live: true, sid: null, home: null, expanded: null, crumbs: [] }
       if (typeof st.expanded !== 'number' && st.expanded != null) st.expanded = null
+      if (!Array.isArray(st.crumbs)) st.crumbs = []
       const el = fields && fields.__el ? fields.__el : {}
+      // home=面板所属会话（钻取不改变归属）；sid=当前查看的会话（默认=home）
+      const home = session || st.home || st.sid
+      if (!home) return { ok: true, html: '<div class="jr-tabpanel tb-root"><div class="tb-notice">未找到当前会话</div></div>', state: st }
+      st.home = home
+      if (!st.sid) st.sid = home
       if (action === 'toggle-live') st.live = !st.live
       else if (action === 'fdetail' && el.seq != null) {
         const seq = Number(el.seq)
         st.expanded = st.expanded === seq ? null : seq
         st.freshSeq = st.expanded // 仅新展开的那次渲染播放滑入动画（null=收起不播；轮询不重播）
+      } else if (action === 'fenter' && el.seq != null) {
+        // 钻取：解析当前查看会话的日志，找到该子代理调用的子会话 id 后切入（当前会话压栈）
+        const seq = Number(el.seq)
+        const r = await readLog(st.sid)
+        const call = parseItems(r.events || []).find((it) => it.kind === 'call' && it.seq === seq && it.cat === 'subagent')
+        const cid = call ? childIdOf(call) : null
+        if (cid && cid !== st.sid) {
+          st.crumbs.push({ sid: st.sid, label: call.name + ' ' + cid.slice(0, 8) })
+          st.sid = cid
+          st.expanded = null
+        }
+      } else if (action === 'fback') {
+        const prev = st.crumbs.pop()
+        if (prev && prev.sid) { st.sid = prev.sid; st.expanded = null }
       }
-      const sid = session || st.sid
-      if (!sid) return { ok: true, html: '<div class="jr-tabpanel tb-root"><div class="tb-notice">未找到当前会话</div></div>', state: st }
-      st.sid = sid
+      const sid = st.sid
       try {
         const html = await render(st, sid)
         return { ok: true, html, state: st }

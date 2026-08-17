@@ -79,9 +79,10 @@ return {
     const FILTERS = [
       ['skill', '技能'], ['cordis', '插件'], ['mcp', 'MCP'],
       ['subagent', '子代理'], ['shell', '命令'], ['file', '文件'],
-      ['builtin', '内置'], ['msg', '消息'],
+      ['builtin', '内置'], ['msg', '消息'], ['error', '失败'],
     ]
-    const ALL_CATS = FILTERS.map(([v]) => v)
+    // 「失败」是状态过滤（只看失败调用，与其他分类为并集），不参与「全部」分类开关
+    const ALL_CATS = FILTERS.map(([v]) => v).filter((v) => v !== 'error')
     const DEFAULT_FILTERS = ['skill', 'cordis', 'mcp', 'shell']
 
     const pad2 = (n) => (n < 10 ? '0' : '') + n
@@ -161,6 +162,8 @@ return {
     }
 
     const matchFilter = (it, filters) => {
+      // 失败过滤：只看 status=error 的调用（与分类并集）
+      if (filters.indexOf('error') >= 0 && it.kind === 'call' && it.status === 'error') return true
       const cat = it.kind === 'msg' ? 'msg' : it.cat
       return filters.indexOf(cat) >= 0
     }
@@ -287,7 +290,10 @@ return {
       if (action === 'filter' && el.v) {
         const v = String(el.v)
         if (v === 'all') {
-          st.filters = st.filters.length === ALL_CATS.length ? [] : ALL_CATS.slice()
+          // 「全部」只切分类位，保留「失败」位
+          const errOn = st.filters.indexOf('error') >= 0
+          const allOn = ALL_CATS.every((c) => st.filters.indexOf(c) >= 0)
+          st.filters = allOn ? (errOn ? ['error'] : []) : ALL_CATS.concat(errOn ? ['error'] : [])
         } else {
           const i = st.filters.indexOf(v)
           if (i >= 0) st.filters.splice(i, 1); else st.filters.push(v)
@@ -372,8 +378,8 @@ return {
           '<button type="button" class="tb-btn tb-btn-sm" data-action="pick">切换</button>' +
           '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
         '</div>')
-        // 过滤芯片（多选；「全部」= 全选/清空开关）
-        const allOn = st.filters.length === ALL_CATS.length
+        // 过滤芯片（多选；「全部」= 分类全选/清空开关，不含「失败」状态位）
+        const allOn = ALL_CATS.every((v) => st.filters.indexOf(v) >= 0)
         parts.push('<div class="tb-chips">' +
           '<button type="button" class="tb-chip' + (allOn ? ' tb-chip-on' : '') + '" data-action="filter" data-v="all">全部 ' + model.items.length + '</button>' +
           FILTERS.map(([v, label]) => {

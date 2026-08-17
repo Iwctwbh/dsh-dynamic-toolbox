@@ -95,12 +95,12 @@ const check = (label, cond, detail) => {
 
   // 点卡片展开完整详情（read 调用 seq=3）
   r = await h({ action: 'fdetail', fields: { __el: { seq: '3' } }, state: r.state, root: ROOT, session: 's-main' })
-  check('点卡片 → 展开完整详情块', r.html.indexOf('fl-detail') >= 0)
+  check('点卡片 → 右侧浮层展开详情（fl-rail）', r.html.indexOf('fl-rail') >= 0)
   check('详情 → 完整传入（美化 JSON file_path）', r.html.indexOf('&quot;file_path&quot;: &quot;a.js&quot;') >= 0 || r.html.indexOf('file_path') >= 0)
   check('详情 → 完整返回（file a content）', r.html.indexOf('file a content') >= 0)
   check('详情 → 卡片高亮 fl-on', r.html.indexOf('fl-on') >= 0)
   r = await h({ action: 'fdetail', fields: { __el: { seq: '3' } }, state: r.state, root: ROOT, session: 's-main' })
-  check('再点 → 收起详情', r.html.indexOf('fl-detail') < 0)
+  check('再点 → 收起详情', r.html.indexOf('fl-rail') < 0)
 
   // 静默刷新动作（__refresh 不报错）
   r = await h({ action: '__refresh', fields: {}, state: r.state, root: ROOT, session: 's-main' })

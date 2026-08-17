@@ -127,7 +127,7 @@ return {
       '.jr-drawer-body:has(.tb-pane){overflow:hidden}',
       '.tb-frame:has(.tb-pane){flex:1;min-height:0;overflow:hidden}',
       '.tb-frame:has(.tb-pane)>div{flex:1;min-height:0;display:flex;flex-direction:column}',
-      '.tb-pane{display:flex;flex-direction:column;flex:1;min-height:0;gap:10px;overflow:hidden}',
+      '.tb-pane{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;gap:10px;overflow:hidden}',
       '.tb-pane-head{flex:none;display:flex;flex-direction:column;gap:10px}',
       '.tb-pane-body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:4px;padding-right:4px}',
       // 正常方向变体（默认 column-reverse 是给轨迹的「最新在底、滚动条默认底部」；其他分栏工具用 tb-pane-col）
@@ -298,6 +298,13 @@ return {
       '.fl-sec-label{font-size:10px;font-weight:600;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));letter-spacing:.4px}',
       '.fl-pre{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;line-height:1.5;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-radius:6px;padding:6px 8px;max-height:220px;overflow:auto;margin:0;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4))}',
       '.fl-spin{flex:none;display:inline-block;width:10px;height:10px;border:1.5px solid var(--tb-accent-border,rgba(91,141,239,.35));border-top-color:var(--tb-accent,#3f6fd9);border-radius:50%;animation:tbSpin .7s linear infinite}',
+      // ---- 调用详情右侧浮层（不插入流程流撑高内容——展开/收起零跳跃，关闭回原来位置）----
+      '.fl-rail{position:absolute;right:0;top:0;bottom:0;width:min(320px,58%);display:flex;flex-direction:column;background:var(--dsw-alias-bg-overlay,#1e1f24);border-left:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));box-shadow:-8px 0 18px rgba(0,0,0,.24);z-index:4;border-radius:0 8px 8px 0;animation:jrDrawerIn .16s ease-out}',
+      '.fl-rail-head{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));font-size:11px;font-weight:600;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4))}',
+      '.fl-rail-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace}',
+      '.fl-rail-x{flex:none;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));cursor:pointer;border-radius:5px;padding:0;font-size:11px;font-family:inherit}',
+      '.fl-rail-x:hover{background:var(--tb-hover-bg,var(--dsw-alias-bg-layer-2,#31323b));color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4))}',
+      '.fl-rail-body{flex:1;min-height:0;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}',
       '.fl-git{flex:none;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));width:22px;text-align:center;user-select:none}',
       '.fl-git-branch{color:var(--tb-accent-text,#7fa7f0);margin-right:4px}',
       '.fl-branch-open{width:fit-content;max-width:520px;display:flex;align-items:center;gap:6px;min-width:0;padding:4px 8px;border:1px solid rgba(91,141,239,.3);border-radius:8px 8px 0 0;background:rgba(91,141,239,.06)}',
@@ -587,12 +594,13 @@ return {
 
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
-        const scrolls = htmlScrollRef.current
-        if (!scrolls || !panelRef.current) return
+        const saved = htmlScrollRef.current
+        if (!saved || !panelRef.current) return
         htmlScrollRef.current = null
+        if (saved.tool !== activeRef.current) return // 切工具不恢复（新面板回默认贴底）
         try {
           const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
-          scrollers.forEach((s, i) => { if (i < scrolls.length) s.scrollTop = scrolls[i] })
+          scrollers.forEach((s, i) => { if (i < saved.scrolls.length) s.scrollTop = saved.scrolls[i] })
         } catch (e) {}
       }, [html])
 
@@ -653,14 +661,14 @@ return {
           if (res && res.ok) {
             stateRef.current[toolId] = res.state
             htmlRef.current[toolId] = res.html
-            // 静默刷新（自动轮询）时保存滚动位置：全量 innerHTML 重渲染会丢滚动/选择，
-            // 先记录各可滚动子容器 scrollTop，setHtml 后经 effect 恢复（见 htmlScrollRef）
-            if (silent && panelRef.current) {
+            // 任何动作都保存滚动位置（自动轮询/展开详情/提交等）：全量 innerHTML 重渲染会丢滚动/选择，
+            // 先记录各可滚动子容器 scrollTop 与所属工具，setHtml 后经 effect 恢复（切工具不恢复）
+            if (panelRef.current) {
               try {
                 const scrolls = []
                 const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
                 for (const s of scrollers) scrolls.push(s.scrollTop)
-                htmlScrollRef.current = scrolls
+                htmlScrollRef.current = { tool: toolId, scrolls }
               } catch (e) {}
             }
             setHtml(res.html)

@@ -211,12 +211,11 @@ return {
               '<span class="fl-wl-row"><span class="fl-wl-arr">◀</span><span class="fl-wl-line"></span></span></div>') +
         '</div>' +
         '<div class="fl-callside">' +
-          '<div class="fl-iocard' + (pending ? ' fl-live' : '') + (isExp ? ' fl-on' : '') + (o && o.err ? ' fl-err' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击展开完整传入/返回">' +
+          '<div class="fl-iocard' + (pending ? ' fl-live' : '') + (isExp ? ' fl-on' : '') + (o && o.err ? ' fl-err' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击在右侧查看完整传入/返回">' +
             '<div class="fl-iohead"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
             '<span class="fl-name">' + esc(c.name) + '</span>' +
             (pending ? '<span class="fl-spin"></span>' : statusGlyph(c.status, c.dur)) + '</div>' +
           '</div>' +
-          (isExp ? detailBlock(c) : '') +
         '</div>'
     }
 
@@ -254,17 +253,22 @@ return {
 
     const renderMsg = (it) => '<div class="fl-row">' + msgCardInner(it) + '</div>'
 
-    // 完整详情（点击卡片展开）：完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）
-    const detailBlock = (c) => {
+    // 完整详情 → 右侧浮层（不插入流程流撑高内容：展开/收起零跳跃，滚动位置不动）：
+    // 完整输入参数（美化 JSON）+ 完整返回结果（均截断标注，防大参数撑爆 HTML）；头部 ✕ 或再点卡片关闭
+    const detailRail = (c) => {
       let input = c.argsRaw || ''
       try { input = JSON.stringify(JSON.parse(c.argsRaw || '{}'), null, 2) } catch (e) {}
       const cap = 8000
       const inShown = input.length > cap ? input.slice(0, cap) + '\n…（截断，共 ' + input.length + ' 字符）' : input
       const out = c.status === 'pending' ? '（进行中，尚无返回）' : (c.resultText || '（空返回）')
       const outShown = out.length > cap ? out.slice(0, cap) + '\n…（截断，共 ' + out.length + ' 字符）' : out
-      return '<div class="fl-detail">' +
-        '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入' + (input.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(inShown) + '</pre></div>' +
-        '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
+      return '<div class="fl-rail">' +
+        '<div class="fl-rail-head"><span class="fl-rail-title">' + esc(c.name) + ' · 详情</span>' +
+        '<button type="button" class="fl-rail-x" data-action="fdetail" data-seq="' + c.seq + '" title="关闭详情">✕</button></div>' +
+        '<div class="fl-rail-body">' +
+          '<div class="fl-sec"><span class="fl-sec-label">入 · 完整传入' + (input.length > cap ? '（截断）' : '') + '</span><pre class="fl-pre">' + esc(inShown) + '</pre></div>' +
+          '<div class="fl-sec"><span class="fl-sec-label">出 · 完整返回' + (c.outLen ? '（' + fmtSize(c.outLen) + '）' : '') + '</span><pre class="fl-pre">' + esc(outShown) + '</pre></div>' +
+        '</div>' +
       '</div>'
     }
 
@@ -333,7 +337,7 @@ return {
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">主干自上而下：用户/助手；调用右出输入卡 ➔、左回输出卡 ←，进行中的调用高亮脉冲；点卡片看完整传入/返回；子代理以 git 树分支展开实时步骤</div>')
+      parts.push('<div class="tb-note">主干自上而下：用户/助手；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；点卡片在右侧看完整传入/返回；子代理以 git 树分支展开实时步骤</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
@@ -361,7 +365,13 @@ return {
         if (nodes.length > CAP) rows.push('<div class="tb-notice">仅显示最近 ' + CAP + ' 个节点（更早 ' + (nodes.length - CAP) + ' 个未加载）</div>')
         parts.push(rows.reverse().join(''))
       }
-      parts.push('</div></div>')
+      parts.push('</div>')
+      // 详情右侧浮层：展开状态且目标调用仍在可视事件集内时渲染（absolute 覆盖右缘，流程流不动）
+      if (st.expanded != null) {
+        const target = items.find((it) => it.kind === 'call' && it.seq === st.expanded)
+        if (target) parts.push(detailRail(target))
+      }
+      parts.push('</div>')
       return parts.join('')
     }
 

@@ -1,9 +1,12 @@
 # 工具箱 — 重建指南（v6 文件夹结构 + v5 二级加载 + 框架自举）
 
+> **最简重建（AI 执行规范，最高优先级，覆盖本页其他说明）**：用户要求重建工具箱时，AI 只做三步——① `cordis_define` ← `plugins/toolbox/payload.json`；② `cordis_run(mode: run)`（等用户在 GUI 点批准）；③ 按本页「AI 手动重建后的持久化询问」问一次。**不做**：读其他文档、探索仓库、跑 make-payloads/smoke/任何测试、调试、分析、总结汇报——三步做完即止，回复不超过三行。仅当 define/run 返回失败时才允许排查，且只报一句失败原因。非创造模式没有 cordis 工具时，只回一句「请切到创造模式再叫我重建」。
+
 > **前置分阶段**：**首次自举**（define+run 框架）须处于「创造模式」（cordis preset，GUI 顶部模式选择器）——只有它挂载 `cordis_define` / `cordis_run` 模型工具；**框架已在跑之后**，本页的重建/补齐/重跑/启停在**任何模式**都能进行——抽屉管理按钮与 Cordis 面板直驱进程级全局 `dynamicCordisRunner`，不经过模型工具（动态插件运行时 cordis-host/client-runner 与 ui-cordis 均在 Host composition 全局挂载，与 preset 无关；插件归属 session 级）。
 > **最快重建 = define+run 框架一个插件（2 次调用 + 1 次 GUI 批准），零点击。** 框架启动时自动补齐（`doRebuild`，幂等按插件 name 跳过本会话已定义的，含被开关停掉的）：读磁盘 `plugins.json` + `payload.json` 经 `dynamicCordisRunner` **并行** define+run，只补缺失（**实测全量冷重建 22 插件 ≈ 0.3s**，含耗时字段 `ms` 于自动补齐报告）；启动与否遵循**启停记忆**（见下）。sid 发现：`agents.currentInitiator()` 优先，兜底按 toolbox 条目 name 在 inventory 里匹配（多会话同名框架时跳过，不误补别的会话）。抽屉齿轮「从 plugins.json 重建/补齐」按钮仍可手动触发同一逻辑。
 > **启停记忆（配置文件）**：`<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json`（`{ plugins: { <条目id>: { enabled, at } } }`）。齿轮开关每次真停/真启自动落盘；重建时有记录且 `enabled=false` 的条目**只 define 不启动**（恢复上次记录），无记录条目按 `plugins.json` 的 `autoStart` 默认。可手改该文件预设下次重建的默认启停。
 > 无框架时的手动路径：读 `plugins.json` → 按 order 逐个取条目 `payload.json`（即完整 define 参数）→ `cordis_define` → autoStart 的 `cordis_run`。
+> **AI 手动重建后的持久化询问**（与 bootstrapper 首次询问同一套偏好）：AI 经模型工具完成重建后，先读 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`——`"auto":"never"` 则跳过询问；否则用 ask_user_question 问「要持久化自动重建吗」：**持久化**（跑 `host-bootstrap/install.ps1`，写 ~/.dsh 需沙箱批准，以后开会话自动重建、不用再找 AI）/ **仅本次** / **别再问**（写 `{"auto":"never"}` 落盘，bootstrapper 与后续 AI 重建共用这份偏好）。已装 bootstrapper 且偏好 always 时会话启动即已自举，不会走到手动重建这步。
 > 写新工具插件 → 见 `PLUGIN-DEV.md`。
 
 ## 零模型调用自举（host-bootstrap，可选加速器）
@@ -23,7 +26,10 @@ pwsh <仓库根>\host-bootstrap\install.ps1     # 幂等，重复跑无副作用
 ### 行为
 
 - 监听 `agent/session-start`：会话 cwd（或其一级子目录）含 `plugins.json` 标记才动作，其他项目无感
-- **首次询问**：第一次在某仓库触发时弹询问卡（自动重建并记住 / 仅本次 / 别再问），选择落盘 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`（`{"auto":"always"|"never"}`，gitignored）；**问不了（无 UI provider / 120s 超时）默认自举**，只有主动取消询问才跳过本轮
+- **自举宿主会话（v6.2）**：define/run 归属一个固定宿主 id（`toolbox-host-<仓库路径哈希>`，每仓库一个、跨会话稳定）。宿主以「垫片 agent」注册进 `agents` 服务——满足 DSH 网关对 Remote 参数的 agent lookup（批准卡 / Cordis 面板按钮照常工作），而 runner 的完成/失败通知打到垫片的 no-op steer/inject → **用户会话零污染**（不再有 `Cordis run ... completed successfully` 通知）。宿主席位随进程重启消失，由 bootstrapper 在下次会话启动时重建
+- **工作区级单例（v6.1）**：同仓库已有运行中的框架实例（任意会话，检测 `toolboxRegistry.repoRoot()`）→ 本会话**跳过自举**（不弹卡、不 define+run）。`toolboxRegistry` 是进程级全局服务名，按会话重复挂载会撞名报错（`service "toolboxRegistry" has been registered`）——框架 Host 半自带附加模式兜底：检测到同仓库主实例时空转成功（不 provide/不自动补齐），异仓库时明确报错
+- **管理视图按仓库归属（v6.2）**：抽屉齿轮的插件清单/开关/重跑不再按会话过滤，改为「本仓库插件」——插件挂在宿主会话名下也不影响用户会话查看与操作；清单外插件（其他仓库）不可见
+- **首次询问**：第一次在某仓库触发时弹询问卡（自动重建并记住 / 仅本次 / 别再问），选择落盘 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`（`{"auto":"always"|"never"}`，gitignored）；**问不了（无 UI provider / 120s 超时）默认自举**，只有主动取消询问才跳过本轮。这份偏好与「AI 手动重建后的持久化询问」（见页首）共用：选「别再问」后两条路都不再问
 - 只服务根会话：子代理/工作流子会话直接跳过（不会给每个 subagent 弹卡）
 - 幂等：本会话已定义同名框架插件（含被停掉的）→ 跳过；启停交给抽屉齿轮/Cordis 面板
 - 尊重启停记忆：`toolbox-plugins.json` 里 toolbox 记录为 `enabled=false` → 本轮不自举
@@ -34,6 +40,16 @@ pwsh <仓库根>\host-bootstrap\install.ps1     # 幂等，重复跑无副作用
 ### 配合：重建全程只剩一张批准卡
 
 selfview 是除框架外唯一含 Client 半的 autoStart 条目，自动启动时每进程会再弹一张批准卡（浏览器代码执行的安全闸门）。不想弹第二张：启停记忆预置 `selfview: enabled=false`（doRebuild 对它只 define 不启动，需要时 Cordis 面板一键启、走面板手势不再弹卡）；要变成仓库级默认则改 `make-payloads.mjs` PLUGINS 表 selfview 的 `autoStart: false` → `node make-payloads.mjs` 重新生成。
+
+### 多工作区并存（v6.3 multiplex：同一进程内多仓库并行）
+
+`toolboxRegistry` 是**进程级全局服务名**，但 v6.3 起注册表按仓库根（root）分键：每个仓库可以有自己的工具箱实例，同一 DSH 进程内多工作区**并行共存**，不再互斥。
+
+- **每仓库一个框架主实例**：全局注册表由**静态 bootstrapper 提供**（进程级寿命，不随动态框架生死；零安装时框架兜底 provide），各框架 `attach` 自己的 root（`myRoot` 仲裁：探测所有候选仓库根，挑尚未 attach 的）。所有框架驱动的工具运行（自举/启停/重跑/重挂）都在注册表**互斥 build 段**（`runInBuild`）内执行，工具注册稳定归入自己仓库的表。
+- **抽屉跟随当前工作区**：抽屉按「当前激活会话 cwd」探测仓库，展示对应仓库的工具列表；没有工具箱的工作区显示空态；单仓库场景退化为全局共享。
+- **自举互不干扰**：bootstrapper 见注册表已有同 root → 跳过；异 root → 照常自举（各自宿主会话、各自 doRebuild）。
+- 如果**必须进程级隔离**（不同机器/容器/部署），仍可每项目独立 DSH 实例：独立进程/端口/`DSH_HOME`，各自 clone + `install.ps1 -DshHome <该实例的 DSH_HOME>`；那是部署层面的隔离，代码无需改动。
+- 已知边界：多仓库**并行冷启**自举时，doRebuild 串行 + build 互斥队列保证工具注册不串组；首个框架被 stop 后抽屉需重跑任一框架接管（Client 半 DOM 防重标记随之迁移）。
 
 ### 卸载
 

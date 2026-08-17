@@ -319,16 +319,21 @@ return {
     }
 
     // 子代理分支内容（左列）：入口卡（可点详情）+ 支线步骤（限高滚动）+ 出口卡
+    // 运行中 = 调用在途（pending）或子会话仍 live——任一成立入口卡持续 fl-live（流光/脉冲/转圈）
     const subBranchHtml = async (c) => {
-      let sub = '<div class="fl-sub-card fl-sub-open' + (c.status === 'pending' ? ' fl-live' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击查看完整任务传入/返回">' +
+      const cid = childIdOf(c)
+      let subLive = c.status === 'pending'
+      let sub2 = null
+      if (cid) {
+        try { sub2 = await childRows(cid, 10); if (sub2.live) subLive = true } catch (e) {}
+      }
+      let sub = '<div class="fl-sub-card fl-sub-open' + (subLive ? ' fl-live' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击查看完整任务传入/返回">' +
         '<div class="fl-iohead"><span class="fl-tag" style="color:var(--tb-active-text,#7fa7f0);background:rgba(91,141,239,.12)">子代理</span>' +
         '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
         '<div class="fl-sub-io"><span class="fl-io-tag">入</span><span class="fl-branch-txt">' + esc(inSummary(c)) + '</span></div>' +
       '</div>'
-      const cid = childIdOf(c)
       let steps = ''
-      if (cid) {
-        const sub2 = await childRows(cid, 10)
+      if (cid && sub2) {
         steps += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') +
           '<button type="button" class="tb-btn tb-btn-sm" data-action="fenter" data-seq="' + c.seq + '" title="进入该子代理的完整流程图（可逐级返回）">进入 →</button></div>'
         for (const r of sub2.rows) {

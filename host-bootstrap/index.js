@@ -22,11 +22,60 @@ const OPT_NEVER = '不重建，以后别再问'
 export const name = 'dsh-toolbox-bootstrap'
 
 export function apply(ctx) {
+  // 全局 multiplex 注册表（v6.3）：由静态插件提供 → 进程级寿命，不随任何动态框架生死。
+  // 零安装（未装本插件）时框架兜底 provide（见 plugins/toolbox/host.js 的 makeRegistry 分支）。
+  if (!ctx.get('toolboxRegistry')) {
+    try { ctx.provide('toolboxRegistry', makeRegistry()) } catch (e) {
+      console.warn('[toolbox-bootstrap] 全局注册表提供失败: ' + String((e && e.message) || e))
+    }
+  }
   ctx.on('agent/session-start', (payload) => {
     const agent = payload && payload.agent
     bootstrap(ctx, agent).catch((e) =>
       console.warn('[toolbox-bootstrap] ' + String((e && e.message) || e)))
   })
+}
+
+// 与 plugins/toolbox/host.js 的 makeRegistry 保持同一契约（host.js 保留兜底分支）；
+// root → 工具表；build 用锁式 runInBuild(root, fn)：整个异步段持锁，段内 register 归 root。
+const makeRegistry = () => {
+  const tables = new Map() // root -> Map<id, entry>
+  let buildRoot = null
+  let lastRoot = null
+  let lock = Promise.resolve()
+  const tableOf = (root) => {
+    if (!root) return null
+    let t = tables.get(root)
+    if (!t) { t = new Map(); tables.set(root, t) }
+    return t
+  }
+  const register = (desc, handler) => {
+    if (!desc || typeof desc.id !== 'string' || !desc.id || typeof handler !== 'function') return () => {}
+    const t = tableOf(buildRoot || lastRoot)
+    if (!t) return () => {}
+    const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, handler }
+    t.set(desc.id, entry)
+    return () => { if (t.get(desc.id) === entry) t.delete(desc.id) }
+  }
+  return {
+    attach(root) { if (!root) return; lastRoot = root; tableOf(root) },
+    register,
+    async runInBuild(root, fn) {
+      const prev = lock
+      let r
+      lock = new Promise((res) => { r = res })
+      await prev
+      buildRoot = root || null
+      try { return await fn() } finally { buildRoot = null; r() }
+    },
+    tools(root) {
+      const t = tables.get(root || lastRoot) || new Map()
+      return [...t.values()].sort((a, b) => a.order - b.order)
+        .map((x) => ({ id: x.id, label: x.label, order: x.order }))
+    },
+    has(root) { return root ? tables.has(root) : false },
+    roots() { return [...tables.keys()] },
+  }
 }
 
 async function bootstrap(ctx, agent) {
@@ -58,13 +107,35 @@ async function bootstrap(ctx, agent) {
     }
   } catch (e) {}
 
-  // 幂等：本会话已定义同名框架插件（含被停掉的）→ 跳过，启停交给抽屉/Cordis 面板
+  // 注册表级幂等（v6.3 multiplex）：toolboxRegistry 是进程级全局服务（第一份 provide），
+  // 但注册表按 root 分键——同仓库已有框架实例 → 跳过本会话自举（复用）；异仓库 → 照常自举
+  // （各仓库各挂一份，互不冲突）。根未知时跳过更安全。
+  const reg = ctx.get('toolboxRegistry')
+  if (reg) {
+    let sameRoot = false
+    try { sameRoot = typeof reg.has === 'function' ? reg.has(root) : Boolean(reg.roots && reg.roots().indexOf(root) >= 0) } catch (e) {}
+    if (sameRoot) {
+      console.log('[toolbox-bootstrap] 检测到已运行的工具箱框架（' + root + '），本会话跳过自举（同仓库复用）')
+      return
+    }
+  }
+
+  // 幂等：本仓库（宿主）已定义同名框架插件（含被停掉的）→ 跳过，启停交给抽屉/Cordis 面板
   let payload
   try {
     payload = JSON.parse(await fs.readText(await fs.resolve(PAYLOAD, { cwd: root })))
   } catch (e) { return }
+
+  // 自举宿主会话：define/run 归属一个固定宿主 id（每仓库一个，稳定跨会话；进程重启后随 agents/Dynamic
+  // 插件一起消失，由本插件在下一次会话启动时重建）。宿主以「垫片 agent」注册进 agents 服务——
+  // 满足 DSH 网关对 Remote 参数的 agent lookup（批准卡 runHostHalf / Cordis 面板操作都能解析到），
+  // 而 runner 的完成/失败通知（agent.steer / agent.inject）打到垫片的 no-op 方法 → 用户会话零污染。
+  const hostId = hostIdOf(root)
+  const hostAgent = await ensureHostAgent(ctx, hostId, root)
+  if (!hostAgent) { console.warn('[toolbox-bootstrap] 宿主垫片创建失败，跳过自举'); return }
+  // 幂等只判本仓库宿主会话（评审阻断 1 修复）：两仓库框架同名时，第二仓库不得被第一仓库的行误判已定义
   for (const row of runner.inventory()) {
-    if (row.agentId !== sid) continue
+    if (row.agentId !== hostId) continue
     if (row.packages.some((p) => p && p.name === payload.name)) return
   }
 
@@ -86,19 +157,49 @@ async function bootstrap(ctx, agent) {
   }
 
   const rec = runner.define({
-    sessionId: sid,
+    sessionId: hostId,
     plugin: payload.plugin,
     name: payload.name,
     purpose: payload.purpose,
     code: payload.code,
   })
-  const res = await runner.run(agent, rec.pluginId, rec.packageId, 'run')
+  const res = await runner.run(hostAgent, rec.pluginId, rec.packageId, 'run')
   if (res && res.ok) {
     console.log('[toolbox-bootstrap] toolbox ' +
       (res.status === 'awaiting-approval' ? '等待批准（点一次允许即完成重建）' : '已启动') +
-      ' · session ' + sid)
+      ' · 宿主 ' + hostId)
   } else {
     console.warn('[toolbox-bootstrap] run 失败: ' + String((res && (res.message || res.reason)) || 'unknown'))
+  }
+}
+
+// 每仓库一个稳定宿主会话 id（进程内唯一；仅字母数字与连字符，避免非 ASCII/分隔符问题）
+function hostIdOf(root) {
+  return 'toolbox-host-' + String(root).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 48)
+}
+
+// 宿主垫片 agent：注册进 agents 服务（不产生真实会话/不触发 agent/session-start）。
+// 只实现 runner/网关会碰到的面：id、session.header、steer/inject（no-op，通知静默丢弃）。
+async function ensureHostAgent(ctx, hostId, root) {
+  const agents = ctx.get('agents')
+  if (!agents) return null
+  if (typeof agents.get === 'function') {
+    const existing = agents.get(hostId)
+    if (existing) return existing
+  }
+  const stub = {
+    id: hostId,
+    session: { header: { id: hostId, cwd: root } },
+    steer() {},
+    inject() {},
+  }
+  if (typeof agents.register !== 'function') return null
+  try {
+    agents.register(stub)
+    return stub
+  } catch (e) {
+    console.warn('[toolbox-bootstrap] 宿主垫片注册失败: ' + String((e && e.message) || e))
+    return null
   }
 }
 

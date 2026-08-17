@@ -7,6 +7,19 @@ return {
   name: 'toolbox',
   inject: ['timer'],
   apply(ctx) {
+    // 进程级单例（工作区级）：页面已有主实例的抽屉时，本会话 Client 半空转——避免重复注册
+    // sidebar.footer.action / shell.overlay 造成双抽屉。标记随 fiber 卸载清理；主实例停止后
+    // 重新运行本插件即可重新成为主实例。
+    if (typeof document !== 'undefined' && document.body) {
+      if (document.body.hasAttribute('data-dsh-toolbox-mounted')) {
+        console.log('toolbox: 页面已存在工具箱抽屉（另一会话的主实例），本会话 Client 半跳过')
+        return
+      }
+      document.body.setAttribute('data-dsh-toolbox-mounted', '1')
+      ctx.effect(() => () => {
+        try { if (document.body) document.body.removeAttribute('data-dsh-toolbox-mounted') } catch (e) {}
+      })
+    }
     const slots = ctx.get('slots')
     if (slots === undefined) return
     const themeSvc = ctx.get('theme')
@@ -166,6 +179,10 @@ return {
       '.tb-pill-other{color:var(--tb-warn-text,#d4b95c);border-color:var(--tb-warn-border,rgba(212,167,44,.4))}',
       '.tb-pill-warn{color:var(--tb-warn-text,#d4b95c);border-color:var(--tb-warn-border,rgba(212,167,44,.4))}', // 语义同 other（警示黄）；轨迹「命令」类等需要语义名的场景用
       '.tb-pill-plain{color:var(--tb-text-2,var(--dsw-alias-label-secondary,#9a9ba6));border-color:var(--tb-border-2,var(--dsw-alias-border-l2,#454650))}',
+      // 可点 pill（管理视图「重启后」默认启停）：幽灵虚线弱化存在感，悬停/开启才上 accent，与展示型 pill 拉开层级
+      '.tb-pill-btn{display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 8px;border-radius:999px;font-size:11px;white-space:nowrap;font-family:inherit;line-height:1;background:transparent;border:1px dashed var(--tb-border-2,var(--dsw-alias-border-l2,#454650));color:var(--tb-text-3,#8b8c96);cursor:pointer}',
+      '.tb-pill-btn:hover{color:var(--tb-active-text,#7fa7f0);border-color:var(--tb-active-border,rgba(91,141,239,.4))}',
+      '.tb-pill-btn.on{color:var(--tb-active-text,#7fa7f0);border:1px solid var(--tb-active-border,rgba(91,141,239,.4));background:var(--tb-active-bg,rgba(91,141,239,.08))}',
       // ---- 文本色调 / 通用工具 ----
       '.tb-tx-done{color:var(--tb-done-text,#81c784)}',
       '.tb-tx-active{color:var(--tb-active-text,#7fa7f0)}',
@@ -334,6 +351,21 @@ return {
       '.fl-iocard.fl-on{border-color:var(--tb-accent-border,rgba(91,141,239,.6));background:var(--tb-accent-bg,rgba(91,141,239,.08))}',
       '.fl-iocard.fl-err{border-color:var(--tb-danger-border,rgba(239,83,80,.5))}',
       '.fl-live{border-color:var(--tb-accent-border,rgba(91,141,239,.65))!important;animation:flPulse 1.6s ease-in-out infinite}',
+      // 运行中卡片：渐变流光贴边转圈（conic-gradient 环形遮罩 + 角度动画）。
+      // @property 驱动角度 → 亮段沿边框流动；mask-composite 裁出 1.5px 描边环，内容不被遮。
+      // 不支持 mask-composite / @property 的环境走 @supports 整体降级为原有脉冲。
+      '.fl-live{position:relative}',
+      '@supports (mask-composite: exclude) or (-webkit-mask-composite: xor){' +
+        '.fl-live::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;' +
+        'background:conic-gradient(from var(--fl-sweep,0deg),transparent 0deg,rgba(127,167,240,.9) 55deg,transparent 135deg);' +
+        '-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;' +
+        'mask-composite:exclude;pointer-events:none;animation:flSweep 1.5s linear infinite}' +
+        // 日模式（浅色）下加深加宽亮段，流光同样明显
+        'body:not([data-ds-dark-theme]) .fl-live::before{' +
+        'background:conic-gradient(from var(--fl-sweep,0deg),transparent 0deg,rgba(43,102,240,.95) 80deg,transparent 165deg)}' +
+      '}',
+      '@property --fl-sweep{syntax:"<angle>";initial-value:0deg;inherits:false}',
+      '@keyframes flSweep{to{--fl-sweep:360deg}}',
       // LIVE 脉冲点（进行中调用卡头部，蓝图风）
       '.fl-live .fl-iohead::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tb-done-text,#81c784);animation:flBlink 1.1s ease-in-out infinite}',
       // 助手卡进行中同款流光 + 脉冲点（与工具卡视觉一致）
@@ -480,7 +512,7 @@ return {
     const SNAP_THRESHOLD = 120
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
-    const fetchTools = () => host.call('toolbox/tools')
+    const fetchTools = (root) => host.call('toolbox/tools', { root: root || undefined })
       .then((r) => (r && r.ok && Array.isArray(r.tools) ? r.tools : []))
       .catch(() => [])
 
@@ -516,6 +548,8 @@ return {
       toolbox: 'system', 'theme-teal': 'system', 'theme-amber': 'system', selfview: 'system',
     }
     const CATS_LS_KEY = 'dsh.toolbox.cats'
+    // 抽屉导航临时记忆（客户端重载即清）：上次离开的 分类+工具；null = 重载后还没打开过抽屉
+    let lastNav = null
     const catsRead = () => {
       try {
         if (typeof localStorage === 'undefined') return null
@@ -912,6 +946,9 @@ return {
         return row && typeof row.cwd === 'string' && row.cwd ? row.cwd : undefined
       })
       const currentSessionId = props.useSessions((s) => (s && s.current ? String(s.current) : undefined))
+      // cwd 用 ref 固定：1.5s 轮询 interval 持有旧闭包，读取 ref 才能跟随「切工作区」拿到最新激活 cwd
+      const cwdRef = React.useRef(currentCwd)
+      cwdRef.current = currentCwd
 
       function collectFields() {
         const fields = {}
@@ -1059,14 +1096,16 @@ return {
       }, [isOpen])
 
       async function refreshTools() {
-        const list = await fetchTools()
+        const list = await fetchTools(cwdRef.current)
         setTools(list)
-        setActive((cur) => {
-          if (cur && list.some((t) => t.id === cur)) return cur
-          // 无有效记忆时的默认 Tab：会话「流程」（用户指定）；没有 flow 才退到列表第一个
-          const flow = list.find((t) => t.id === 'flow')
-          return flow ? flow.id : (list.length ? list[0].id : null)
-        })
+        // 无有效记忆时的默认 Tab：会话「流程」（用户指定）；没有 flow 才退到列表第一个。
+        // 分类芯片必须同步切到目标工具的分类（flow 在「会话」），否则面板与 Tab 栏错位
+        const cur = activeRef.current
+        if (cur && list.some((t) => t.id === cur)) return
+        const flow = list.find((t) => t.id === 'flow')
+        const target = flow ? flow.id : (list.length ? list[0].id : null)
+        if (target && catOf(target) !== cat) setCat(catOf(target))
+        setActive(target)
       }
 
       // ===== 插件生命周期开关（齿轮管理视图）：直连 Host 半 toolbox/plugins + toolbox/plugin-toggle =====
@@ -1084,6 +1123,7 @@ return {
           const r = await host.call('toolbox/plugin-toggle', {
             pluginId: p.pluginId,
             enable: !p.running,
+            root: currentCwd || undefined,
             session: currentSessionId || undefined,
           })
           if (r && !r.ok) setError(r.error || '插件操作失败')
@@ -1111,6 +1151,7 @@ return {
         try {
           const r = await host.call('toolbox/plugin-restart', {
             pluginId: p.pluginId,
+            root: currentCwd || undefined,
             session: currentSessionId || undefined,
           })
           if (r && !r.ok) setError(r.error || '插件重跑失败')
@@ -1125,7 +1166,7 @@ return {
       async function toggleAll(enable) {
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-toggle-all', { enable, session: currentSessionId || undefined })
+          const r = await host.call('toolbox/plugin-toggle-all', { enable, root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('批量操作无响应')
           else {
@@ -1143,11 +1184,29 @@ return {
         refreshTools()
       }
 
+      // 「重启后」pill 点击：只改启停记忆（下次重建的默认启停），不动当前运行态
+      async function setDefaultPlugin(p) {
+        if (p.defaultStart == null) return // 不在 plugins.json 清单内，无条目可记
+        setError(null)
+        try {
+          const r = await host.call('toolbox/plugin-set-default', {
+            pluginId: p.pluginId,
+            enabled: !p.defaultStart,
+            root: currentCwd || undefined,
+            session: currentSessionId || undefined,
+          })
+          if (r && !r.ok) setError(r.error || '默认启停设置失败')
+        } catch (e) {
+          setError('默认启停设置异常: ' + String((e && e.message) || e))
+        }
+        refreshPlugins()
+      }
+
       // 批量重跑：运行中的 Host-only 插件全部重启（桩重读磁盘 impl）——改完多个工具一键生效
       async function restartAll() {
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-restart-all', { session: currentSessionId || undefined })
+          const r = await host.call('toolbox/plugin-restart-all', { root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('批量重跑无响应')
           else {
@@ -1186,7 +1245,7 @@ return {
         setRebuilding(true)
         setError(null)
         try {
-          const r = await host.call('toolbox/rebuild', { session: currentSessionId || undefined })
+          const r = await host.call('toolbox/rebuild', { root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('重建请求无响应')
           else {
@@ -1196,7 +1255,7 @@ return {
             if (Array.isArray(r.skipped) && r.skipped.length) lines.push('跳过（已定义/框架自身）: ' + r.skipped.join('、'))
             if (Array.isArray(r.suppressed) && r.suppressed.length) lines.push('保持关闭（启停记忆）: ' + r.suppressed.join('、'))
             if (Array.isArray(r.failed) && r.failed.length) lines.push('失败: ' + r.failed.join('；'))
-            if (typeof r.ms === 'number') lines.push('耗时: ' + r.ms + 'ms（payload 读盘 + define + run 全并行）')
+            if (typeof r.ms === 'number') lines.push('耗时: ' + r.ms + 'ms（payload 读盘 + define + run 串行）')
             if (lines.length === 0) lines.push('plugins.json 内插件均已存在，无需重建')
           }
           setRebuildLines(lines)
@@ -1213,8 +1272,16 @@ return {
       React.useEffect(() => {
         // 轮询减负：plugins 清单只有管理视图需要——普通模式只刷 tools（RPC  chatter 减半）
         const disp = ctx.interval(() => { if (store.isOpen()) { refreshTools(); if (managingRef.current) refreshPlugins() } }, 1500)
-        // 打开抽屉时默认落在会话「流程」Tab（用户指定）；抽屉打开期间的 tab 切换与记忆逻辑不变
-        const offOpen = store.subscribe(() => { if (store.isOpen()) { setActive('flow'); refreshTools(); refreshPlugins() } })
+        // 抽屉打开时的导航恢复（用户指定）：重载后「第一次」打开 → 默认 会话+流程；之后打开 →
+        // 恢复上次离开的 分类+工具（lastNav 临时记录）。两路都同步分类芯片与工具 Tab，防面板/Tab 栏错位。
+        const offOpen = store.subscribe(() => {
+          if (!store.isOpen()) return
+          const remembered = lastNav && lastNav.active
+          // 有记忆恢复记忆（工具已停则由 refreshTools 兜底回默认并同步分类）；无记忆默认 会话+流程
+          if (remembered) { setCat(catOf(remembered)); setActive(remembered) }
+          else { setCat(catOf('flow')); setActive('flow') }
+          refreshTools(); refreshPlugins()
+        })
         refreshTools()
         refreshPlugins()
         return () => { try { disp() } catch (e) {} offOpen() }
@@ -1513,6 +1580,7 @@ return {
         const remembered = next[id]
         const target = remembered && inCat.some((t) => t.id === remembered) ? remembered : (inCat.length ? inCat[0].id : null)
         setActive(target)
+        lastNav = { cat: id, active: target }
       }
       const moveNode = (id, toCat) => {
         if (!id || !toCat) return
@@ -1545,7 +1613,7 @@ return {
         type: 'button',
         className: 'tb-tab' + (t.id === active ? ' tb-tab-active' : ''),
         title: t.label + '（' + (TOOL_CATS.find((c) => c.id === catOf(t.id)) || {}).label + '）',
-        onClick: () => setActive(t.id),
+        onClick: () => { setActive(t.id); lastNav = { cat: catOf(t.id), active: t.id } },
       }, t.label,
         tabBadges[t.id] ? React.createElement('span', { className: 'tb-tab-badge' }, tabBadges[t.id]) : null,
         t.id === busyTool ? React.createElement('span', { className: 'tb-tab-spin' }) : null)
@@ -1638,7 +1706,7 @@ return {
                         },
                       }, '复制 CSV')))
                 : null,
-              React.createElement('div', { className: 'tb-note' }, '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json ——「重启后」pill 即下次重建的默认启停。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件（框架/主题）请到 Cordis 面板操作。'),
+              React.createElement('div', { className: 'tb-note' }, '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json；「重启后」pill = 下次重建的默认启停，点击切换、只改记忆不动当前状态。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件（框架/主题）请到 Cordis 面板操作。'),
             ),
             React.createElement('div', { className: 'tb-pane-body tb-pane-col' },
               plugins.length === 0
@@ -1663,11 +1731,14 @@ return {
                           React.createElement('span', { className: 'tb-manage-id' }, p.pluginId + (p.currentPackageId ? ' · ' + p.currentPackageId : '') + (p.entryId ? ' · ' + p.entryId : '')),
                         ),
                         React.createElement('span', { className: 'tb-pill ' + (p.running ? 'tb-pill-done' : 'tb-pill-todo') }, p.running ? '运行中' : '已停止'),
-                        p.defaultStart === true
-                          ? React.createElement('span', { className: 'tb-pill tb-pill-active', title: '下次重建默认启动（启停记忆 / 清单 autoStart）' }, '重启后启动')
-                          : p.defaultStart === false
-                            ? React.createElement('span', { className: 'tb-pill tb-pill-other', title: '下次重建只定义不启动（启停记忆记录为关闭）' }, '重启后关闭')
-                            : null,
+                        p.defaultStart != null
+                          ? React.createElement('button', {
+                            type: 'button',
+                            className: 'tb-pill-btn' + (p.defaultStart ? ' on' : ''),
+                            title: '下次重建的默认启停（启停记忆）——点击切换；只改记忆，不动当前运行状态',
+                            onClick: () => setDefaultPlugin(p),
+                          }, p.defaultStart ? '重启后启动' : '重启后关闭')
+                          : null,
                         React.createElement('button', {
                           type: 'button',
                           className: 'tb-btn tb-btn-sm tb-btn-ghost',
@@ -1725,9 +1796,13 @@ return {
           ),
         )
       } else if (tools.length === 0) {
-        body = React.createElement('div', { className: 'tb-empty' },
-          '暂无工具\n运行工具插件（如 Jira）后自动出现在这里；已停止的插件可在右上角管理按钮里重新启动',
-        )
+        body = currentCwd
+          ? React.createElement('div', { className: 'tb-empty' },
+              '当前工作区未检测到 dsh-dynamic-toolbox\n切换到一个包含工具箱的工作区后自动加载；本工作区下不显示工具',
+            )
+          : React.createElement('div', { className: 'tb-empty' },
+              '暂无工具\n运行工具插件（如 Jira）后自动出现在这里；已停止的插件可在右上角管理按钮里重新启动',
+            )
       } else {
         body = React.createElement('div', { className: 'tb-frame', ref: panelRef, onClick: onPanelClick, onKeyDown: onPanelKeyDown },
           error ? React.createElement('div', { className: 'tb-error' }, String(error)) : null,

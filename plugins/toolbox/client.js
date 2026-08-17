@@ -27,6 +27,7 @@ return {
       '.jr-docked{right:0;top:0;bottom:0;max-height:none;border-radius:0;border-top:none;border-right:none;border-bottom:none;border-left:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:-8px 0 24px rgba(0,0,0,.16)}',
       '.jr-docked .jr-drawer-body{flex:1;min-height:0}',
       // 全占右侧：左侧贴侧边栏右缘（left 由渲染时实测侧边栏给出），上下占满，替代主内容区视图
+      // 挤压三栏停靠：抽屉 fixed 右栏（宽度内联给），主内容列 margin-right 让位（见 Drawer 内 effect），左中右并列互不遮挡
       '.jr-docked-full{right:0;top:0;bottom:0;max-height:none;max-width:none;width:auto;border-radius:0;border:none;border-left:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:none;animation:jrDrawerIn .16s ease-out}',
       '.jr-docked-full .jr-drawer-body{flex:1;min-height:0}',
       '@keyframes jrDrawerIn{from{transform:translateX(28px);opacity:.3}to{transform:translateX(0);opacity:1}}',
@@ -571,6 +572,19 @@ return {
       // 停靠模式/激活 Tab/分类工具记忆变化即落盘（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
       React.useEffect(() => { lsWrite({ dockMode, active, activeByCat }) }, [dockMode, active, activeByCat])
 
+      // 挤压三栏：full 模式给主内容列（DSH grid 的 centerCol）加 margin-right 让出抽屉宽度，
+      // 聊天区收缩而非被覆盖（grid 项 margin 在轨道内生效，不影响侧边栏轨道）；
+      // 关闭抽屉/切模式还原，拖拽调宽实时跟随；React 不管该列内联 style，不会被覆盖
+      React.useEffect(() => {
+        if (!isOpen || dockMode !== 'full') return undefined
+        const col = typeof document !== 'undefined' ? document.querySelector('[class*="centerCol"]') : null
+        if (!col) return undefined
+        const w = width || 560
+        const prev = col.style.marginRight
+        col.style.marginRight = w + 'px'
+        return () => { col.style.marginRight = prev }
+      }, [isOpen, dockMode, width])
+
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
         const scrolls = htmlScrollRef.current
@@ -1066,7 +1080,7 @@ return {
       const dockButton = React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
-        title: dockMode === 'right' ? '切换到全占右侧' : dockMode === 'full' ? '切换为浮动' : '停靠到右侧',
+        title: dockMode === 'right' ? '切换到三栏停靠（挤压聊天区，左中右并列）' : dockMode === 'full' ? '切换为浮动' : '停靠到右侧',
         onPointerDown: (ev) => ev.stopPropagation(),
         onClick: (ev) => { ev.stopPropagation(); setDockMode(dockMode === 'right' ? 'full' : dockMode === 'full' ? 'float' : 'right') },
       },
@@ -1077,8 +1091,9 @@ return {
             )
           : dockMode === 'full'
             ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
-                React.createElement('rect', { x: 1.5, y: 2, width: 3, height: 10, rx: 1, opacity: 0.35 }),
-                React.createElement('rect', { x: 5.5, y: 2, width: 7, height: 10, rx: 1 }),
+                React.createElement('rect', { x: 1.5, y: 2, width: 2.6, height: 10, rx: 0.8, opacity: 0.35 }),
+                React.createElement('rect', { x: 5.1, y: 2, width: 5, height: 10, rx: 0.8, opacity: 0.55 }),
+                React.createElement('rect', { x: 11.1, y: 2, width: 1.6, height: 10, rx: 0.5 }),
               )
             : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'currentColor' },
                 React.createElement('rect', { x: 2, y: 2, width: 7, height: 10, rx: 1 }),
@@ -1100,7 +1115,7 @@ return {
       )
 
       const handles = []
-      if (dockMode === 'right') {
+      if (dockMode === 'right' || dockMode === 'full') {
         handles.push(React.createElement('div', {
           key: 'resize-left',
           className: 'jr-resize-left',
@@ -1141,19 +1156,14 @@ return {
       }
 
       const style = {}
-      if (dockMode === 'right' && width) style.width = width + 'px' // 右侧停靠宽度可调（左缘拖拽）
+      if ((dockMode === 'right' || dockMode === 'full') && width) style.width = width + 'px' // 停靠宽度可调（左缘拖拽）
+      if (dockMode === 'full' && !width) style.width = '560px' // 三栏停靠默认宽
       if (dockMode === 'float') {
         if (height) style.height = height + 'px'
         if (pos) {
           style.left = pos.x + 'px'
           style.top = pos.y + 'px'
         }
-      } else if (dockMode === 'full') {
-        // 全占右侧：左缘贴侧边栏右缘（实测），上下占满；宽度由 left+right 撑开，不随 width state
-        const sb = typeof document !== 'undefined' ? document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]') : null
-        const sbRight = sb ? Math.max(0, Math.round(sb.getBoundingClientRect().right)) : 0
-        style.left = sbRight + 'px'
-        style.right = '0'
       }
 
       // ---- 分类归属与迁移（导航行与管理树共用同一 catOf 数据源） ----

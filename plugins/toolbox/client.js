@@ -79,7 +79,10 @@ return {
       '.jr-resize-corner{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:6;touch-action:none}',
       '.jr-resize-corner:hover{background:rgba(59,130,246,.22);border-radius:0 0 10px 0}',
       '.jr-resize-badge{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:5px 12px;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-variant-numeric:tabular-nums;z-index:1310;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.3)}',
-      '.tb-frame{display:flex;flex-direction:column;gap:10px;min-height:0}',
+      '.tb-frame{position:relative;display:flex;flex-direction:column;gap:10px;min-height:0}',
+      // 「回到最新」浮标：面板不在底部时显示（column-reverse 滚动容器 scrollTop<-40 / 正常方向 dist>40），点击平滑回底
+      '.tb-jump-latest{position:absolute;right:16px;bottom:14px;z-index:6;display:inline-flex;align-items:center;height:27px;padding:0 13px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#454650);background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--tb-accent-text,#7fa7f0);font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);font-family:inherit;animation:jrDrawerUp .16s ease-out}',
+      '.tb-jump-latest:hover{border-color:var(--tb-accent-border,rgba(91,141,239,.45))}',
       '.tb-notice{color:var(--dsw-alias-label-secondary,#9a9aa5);font-size:12px;text-align:center;padding:8px 0}',
       '.tb-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:12px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--dsw-alias-border-l1,#3a3b44);border-radius:6px;padding:8px 10px;background:var(--dsw-alias-bg-layer-1,#26272e)}',
       // ===== 共享设计系统（tb-）：工具面板 HTML 直接使用；颜色只消费 --tb-* 变量（带兜底），主题插件在 :root 声明即可覆盖 =====
@@ -603,6 +606,29 @@ return {
           scrollers.forEach((s, i) => { if (i < saved.scrolls.length) s.scrollTop = saved.scrolls[i] })
         } catch (e) {}
       }, [html])
+
+      // 「回到最新」浮标：面板滚动容器不在底部时显示；scroll 不冒泡，挂容器捕获阶段（innerHTML 重渲不影响）
+      const [showJump, setShowJump] = React.useState(false)
+      React.useEffect(() => {
+        if (!isOpen) return undefined
+        const root = panelRef.current
+        if (!root) return undefined
+        const onScroll = (e) => {
+          const t = e.target
+          if (!t || !t.classList || !t.classList.contains('tb-pane-body')) return
+          // column-reverse：底部 scrollTop=0 向上为负；正常方向（tb-pane-col）：底部 scrollTop+clientHeight≈scrollHeight
+          const away = t.classList.contains('tb-pane-col')
+            ? (t.scrollHeight - t.scrollTop - t.clientHeight > 40)
+            : (t.scrollTop < -40)
+          setShowJump(away)
+        }
+        root.addEventListener('scroll', onScroll, true)
+        return () => { try { root.removeEventListener('scroll', onScroll, true) } catch (e) {} }
+      }, [isOpen])
+      const jumpToLatest = () => {
+        const s = panelRef.current && panelRef.current.querySelector('.tb-pane-body')
+        if (s) s.scrollTo({ top: s.classList.contains('tb-pane-col') ? s.scrollHeight : 0, behavior: 'smooth' })
+      }
 
       const currentCwd = props.useSessions((s) => {
         if (!s || !s.current) return undefined
@@ -1410,6 +1436,11 @@ return {
           html
             ? React.createElement('div', { dangerouslySetInnerHTML: { __html: html } })
             : React.createElement('div', { className: 'tb-notice' }, '加载面板…'),
+          showJump ? React.createElement('button', {
+            type: 'button',
+            className: 'tb-jump-latest',
+            onClick: jumpToLatest,
+          }, '↓ 回到最新') : null,
         )
       }
 

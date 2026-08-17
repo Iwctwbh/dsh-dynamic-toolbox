@@ -32,6 +32,19 @@ Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a 
 
 Credentials (e.g. Jira) live in the Harness credential store or environment variables — never in this repo. Full guide: [`REBUILD.md`](REBUILD.md), plugin authoring: [`PLUGIN-DEV.md`](PLUGIN-DEV.md).
 
+### Where a rebuild is recorded
+
+No handwritten log — every bootstrap run leaves its trail in four places:
+
+| Where | What |
+| --- | --- |
+| `.dsh-dynamic-toolbox/toolbox-autorebuild.json` | Framework-written report of the latest `doRebuild`: `defined` / `started` / `skipped` / `suppressed` / `failed` / `approvalPending` + elapsed ms, with a cumulative `history` array |
+| Session chat / Run cards | The `cordis_define` → `cordis_run` → approval flow, one Run card per plugin |
+| Cordis runtime (in-process) | pluginId / packageId / currentPackageId version pointers, queryable anytime via `cordis_inspect_self` |
+| `.dsh-dynamic-toolbox/toolbox-plugins.json` | Enable memory — only **read** by a rebuild; rewritten only when you toggle a plugin in the drawer |
+
+The whole `.dsh-dynamic-toolbox/` directory is git-ignored runtime state.
+
 ## License
 
 [MIT](LICENSE) © 2026 Iwctwbh
@@ -60,6 +73,19 @@ Credentials (e.g. Jira) live in the Harness credential store or environment vari
 - 主题插件（青绿/暖橙）只 define 不启动，互斥按需激活
 - 凭据（Jira 等）走 Harness 凭据存储或环境变量，**不写入本仓库任何文件**
 - 无框架时的手动路径与完整细节见 [`REBUILD.md`](REBUILD.md)
+
+### 重建操作记录在哪
+
+重建不手写日志——每次自举在四个位置留下轨迹：
+
+| 位置 | 内容 |
+| --- | --- |
+| `.dsh-dynamic-toolbox/toolbox-autorebuild.json` | 框架 `doRebuild` 自动写入的最新报告：`defined` / `started` / `skipped` / `suppressed` / `failed` / `approvalPending` + 耗时，附 `history` 累积数组 |
+| 会话聊天 / Run 卡 | `cordis_define` → `cordis_run` → 批准 的操作流，每个插件一张 Run 卡 |
+| Cordis 运行时（进程内） | pluginId / packageId / currentPackageId 版本指针，随时 `cordis_inspect_self` 可查 |
+| `.dsh-dynamic-toolbox/toolbox-plugins.json` | 启停记忆——重建只**读取**它；只有在抽屉里手动启停插件时才会被改写 |
+
+整个 `.dsh-dynamic-toolbox/` 目录都在 `.gitignore` 里（见下方「数据与隐私约定」）。
 
 ## 目录结构
 

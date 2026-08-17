@@ -83,11 +83,16 @@ return {
       // 「回到最新」浮标：面板不在底部时显示（column-reverse 滚动容器 scrollTop<-40 / 正常方向 dist>40），点击平滑回底
       '.tb-jump-latest{position:absolute;right:16px;bottom:14px;z-index:6;display:inline-flex;align-items:center;height:27px;padding:0 13px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#454650);background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--tb-accent-text,#7fa7f0);font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);font-family:inherit;animation:jrDrawerUp .16s ease-out}',
       '.tb-jump-latest:hover{border-color:var(--tb-accent-border,rgba(91,141,239,.45))}',
-      // ---- 画中画（Document PiP）镜像窗口：脱离 WebUI 框体的独立小窗 ----
+      // ---- 画中画（Document PiP）：主抽屉 DOM 的实时镜像窗口（脱离 WebUI 框体） ----
       '.jr-pip-root{display:flex;flex-direction:column;height:100vh;background:var(--dsw-alias-bg-base,#17181d);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;overflow:hidden;font-family:inherit}',
-      '.jr-pip-tabs{flex:none;display:flex;gap:6px;overflow-x:auto;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);scrollbar-width:thin}',
-      '.jr-pip-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}',
-      '.jr-pip-body>.tb-root{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px}',
+      '.jr-pip-bar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);background:var(--dsw-alias-bg-layer-1,#26272e)}',
+      '.jr-pip-bar-title{flex:1;min-width:0;font-size:11.5px;color:var(--dsw-alias-label-secondary,#9a9aa5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.jr-pip-bar-btn{flex:none;height:24px;padding:0 10px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#454650);background:transparent;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:11.5px;cursor:pointer;font-family:inherit}',
+      '.jr-pip-bar-btn:hover{background:var(--dsw-alias-bg-layer-2,#30313a)}',
+      // 镜像容器：抽屉克隆充满窗口；拖拽把手/吸附指示/尺寸徽章在 pip 里无意义隐藏
+      '.jr-pip-mirror{flex:1;min-height:0;overflow:hidden;position:relative}',
+      '.jr-pip-mirror .jr-drawer{display:flex}',
+      '.jr-pip-mirror .jr-resize-left,.jr-pip-mirror .jr-resize-right,.jr-pip-mirror .jr-resize-bottom,.jr-pip-mirror .jr-resize-corner,.jr-pip-mirror .jr-snap-indicator,.jr-pip-mirror .jr-resize-badge{display:none}',
       '.jr-pip-root *{scrollbar-width:thin;scrollbar-color:var(--dsw-alias-border-l2,#454650) transparent}',
       '.jr-pip-root ::-webkit-scrollbar{width:9px;height:9px}',
       '.jr-pip-root ::-webkit-scrollbar-track{background:transparent}',
@@ -580,51 +585,73 @@ return {
         } catch (e) {}
       }
 
-      // ---- 画中画（Document PiP）：把面板镜像到系统级独立小窗（脱离 WebUI 框体） ----
-      // 实现：pip 窗口跑原生 DOM 轻量镜像（Tab 芯片 + 面板 HTML + data-action 原生代理 + 自动刷新），
-      // 数据全走 host.call（与抽屉同一 stateRef，状态连续）；与主抽屉互斥（开 pip 关抽屉、开抽屉关 pip）。
-      const pipRef = React.useRef(null) // { win, timer, renderTabs, themeOff } | null
+      // ---- 画中画（Document PiP）：主抽屉 DOM 的实时镜像（不是独立实现） ----
+      // 原则：主抽屉 React 树是唯一事实源；pip 窗口显示其 DOM 克隆（MutationObserver debounce 同步），
+      // 交互事件按索引路径代理回主 DOM 触发——两种模式显示与行为完全一致；
+      // 主抽屉全程照常运行（轮询/状态不受影响）；pip 未开启时零开销、零影响。
+      const pipRef = React.useRef(null) // { win, mo, syncTimer, themeOff, enlarged, baseW, baseH } | null
       const [pipOn, setPipOn] = React.useState(false)
+      const [mainHidden, setMainHidden] = React.useState(false) // pip 期间主抽屉可视觉隐藏（DOM 存活：镜像源与轮询不断）
+      const pipSupported = typeof window !== 'undefined' && Boolean(window.documentPictureInPicture)
       const closePip = () => {
         const cur = pipRef.current
         pipRef.current = null
         setPipOn(false)
+        setMainHidden(false)
         if (!cur) return
-        try { if (cur.timer) clearInterval(cur.timer) } catch (e) {}
+        try { if (cur.mo) cur.mo.disconnect() } catch (e) {}
+        try { if (cur.syncTimer) clearTimeout(cur.syncTimer) } catch (e) {}
         try { if (typeof cur.themeOff === 'function') cur.themeOff() } catch (e) {}
         try { cur.win.close() } catch (e) {}
       }
-      // 抽屉重新打开 → 关闭 pip（互斥）；组件卸载/插件重跑 → 必关 pip（防孤儿窗）
-      React.useEffect(() => { if (isOpen && pipRef.current) closePip() }, [isOpen])
+      // 侧边栏重新点开抽屉 → 取消视觉隐藏；抽屉被真正关闭 → 联动关 pip（镜像源消失）
+      React.useEffect(() => {
+        if (isOpen && mainHidden) setMainHidden(false)
+        if (!isOpen && pipRef.current) closePip()
+      }, [isOpen])
+      // 组件卸载/插件重跑 → 必关 pip（防孤儿窗）
       React.useEffect(() => () => {
         const cur = pipRef.current
         pipRef.current = null
-        if (cur) {
-          try { if (cur.timer) clearInterval(cur.timer) } catch (e) {}
-          try { cur.win.close() } catch (e) {}
-        }
+        if (!cur) return
+        try { if (cur.mo) cur.mo.disconnect() } catch (e) {}
+        try { if (cur.syncTimer) clearTimeout(cur.syncTimer) } catch (e) {}
+        try { cur.win.close() } catch (e) {}
       }, [])
-      // 工具列表变化 → 刷新 pip 的 Tab 芯片
-      React.useEffect(() => {
-        const cur = pipRef.current
-        if (cur && typeof cur.renderTabs === 'function') cur.renderTabs()
-      }, [tools])
+
+      // 索引路径：镜像内元素 ↔ 主抽屉元素（cloneNode 同构，children 索引一一对应）
+      const pathOf = (el, root) => {
+        const p = []
+        let n = el
+        while (n && n !== root) {
+          const parent = n.parentElement
+          if (!parent) return null
+          p.unshift(Array.prototype.indexOf.call(parent.children, n))
+          n = parent
+        }
+        return n === root ? p : null
+      }
+      const byPath = (root, path) => {
+        let n = root
+        for (const i of path) {
+          if (!n || !n.children || i >= n.children.length) return null
+          n = n.children[i]
+        }
+        return n
+      }
 
       const openPip = async () => {
         if (pipRef.current) { closePip(); return }
-        if (typeof window === 'undefined' || !window.documentPictureInPicture) return
+        if (!pipSupported) return
+        const src0 = drawerRef.current
+        if (!src0) return
         try {
-          const win = await window.documentPictureInPicture.requestWindow({ width: width || 520, height: 620 })
+          const win = await window.documentPictureInPicture.requestWindow({ width: Math.max(560, width || 520), height: Math.round((window.screen ? window.screen.availHeight : 900) * 0.8) })
           // 1. 克隆样式表（link 克隆 / style 标签深克隆；tb- 设计系统与宿主 dsw- 变量一并带走）
           for (const sheet of document.styleSheets) {
             try {
-              if (sheet.href) {
-                const l = win.document.createElement('link')
-                l.rel = 'stylesheet'; l.href = sheet.href
-                win.document.head.appendChild(l)
-              } else if (sheet.ownerNode) {
-                win.document.head.appendChild(sheet.ownerNode.cloneNode(true))
-              }
+              if (sheet.href) { const l = win.document.createElement('link'); l.rel = 'stylesheet'; l.href = sheet.href; win.document.head.appendChild(l) }
+              else if (sheet.ownerNode) win.document.head.appendChild(sheet.ownerNode.cloneNode(true))
             } catch (e) {}
           }
           // 2. 主题同步（body[data-ds-dark-theme] + colorScheme；theme/change 跟随）
@@ -636,86 +663,150 @@ return {
             } catch (e) {}
           }
           syncTheme()
-          // 3. 容器结构（tabs + body）
+          win.document.title = '工具箱 · 画中画'
           win.document.body.style.margin = '0'
+          // 3. 结构：顶部工具条（pip 原生，非镜像）+ 镜像容器
           const rootEl = win.document.createElement('div')
           rootEl.className = 'jr-pip-root'
-          const tabsEl = win.document.createElement('div')
-          tabsEl.className = 'jr-pip-tabs'
-          const bodyEl = win.document.createElement('div')
-          bodyEl.className = 'jr-pip-body'
-          rootEl.appendChild(tabsEl)
-          rootEl.appendChild(bodyEl)
+          const barEl = win.document.createElement('div')
+          barEl.className = 'jr-pip-bar'
+          const barTitle = win.document.createElement('span')
+          barTitle.className = 'jr-pip-bar-title'
+          barTitle.textContent = '工具箱 · 画中画（内容与主窗口一致，操作实时同步）'
+          const btnMax = win.document.createElement('button')
+          btnMax.className = 'jr-pip-bar-btn'
+          btnMax.textContent = '⤢ 放大'
+          btnMax.title = '放大到屏幕 72%×88%（再点还原）'
+          const btnBack = win.document.createElement('button')
+          btnBack.className = 'jr-pip-bar-btn'
+          btnBack.textContent = '✕ 回主窗口'
+          btnBack.title = '关闭画中画，回主窗口抽屉'
+          barEl.appendChild(barTitle)
+          barEl.appendChild(btnMax)
+          barEl.appendChild(btnBack)
+          const mirrorEl = win.document.createElement('div')
+          mirrorEl.className = 'jr-pip-mirror'
+          rootEl.appendChild(barEl)
+          rootEl.appendChild(mirrorEl)
           win.document.body.appendChild(rootEl)
-          const entry = { win, timer: null, renderTabs: null, themeOff: null }
+          const entry = { win, mo: null, syncTimer: null, themeOff: null, enlarged: false, baseW: 0, baseH: 0 }
           pipRef.current = entry
           setPipOn(true)
-          // 4. Tab 芯片渲染（点击切换激活工具并加载面板）
-          const renderTabs = () => {
-            tabsEl.innerHTML = ''
-            for (const t of tools) {
-              const b = win.document.createElement('button')
-              b.className = 'tb-tab' + (t.id === activeRef.current ? ' tb-tab-active' : '')
-              b.textContent = t.label
-              b.onclick = () => { setActive(t.id); pipLoad(t.id, '', null) }
-              tabsEl.appendChild(b)
-            }
-          }
-          entry.renderTabs = renderTabs
-          renderTabs()
-          // 5. 面板加载（host.call 直驱；共享 stateRef/htmlRef；自动刷新约定同抽屉）
-          const pipLoad = async (toolId, action, el) => {
-            if (!toolId || pipRef.current !== entry) return
+          // 4. 镜像同步（整体重克隆 + 滚动/焦点恢复；MutationObserver debounce 合并突变批次）
+          const resync = () => {
+            if (pipRef.current !== entry) return
+            const src = drawerRef.current
+            if (!src) return
+            const scrolls = []
             try {
-              const fields = {}
-              for (const n of bodyEl.querySelectorAll('[data-field]')) fields[n.getAttribute('data-field')] = n.value == null ? '' : String(n.value)
-              if (el) { const d = {}; for (const k of Object.keys(el.dataset || {})) d[k] = el.dataset[k]; fields.__el = d }
-              const res = await host.call('toolbox/panel', { tool: toolId, action: action || '', fields, state: stateRef.current[toolId] || null, root: currentCwd || undefined, session: currentSessionId || undefined })
-              if (pipRef.current !== entry) return
-              if (res && res.ok) {
-                stateRef.current[toolId] = res.state
-                htmlRef.current[toolId] = res.html
-                // 滚动位置保持（同抽屉 htmlScrollRef 机制）：innerHTML 替换会把 column-reverse
-                // 滚动容器拉回底部（点详情/自动轮询都会跳），替换前记录 scrollTop，替换后同步恢复
-                let savedScrolls = null
-                try {
-                  savedScrolls = []
-                  const scrollers = bodyEl.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
-                  for (const s of scrollers) savedScrolls.push(s.scrollTop)
-                } catch (e) {}
-                bodyEl.innerHTML = res.html
-                if (savedScrolls) {
-                  try {
-                    const after = bodyEl.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
-                    after.forEach((s, i) => { if (i < savedScrolls.length) s.scrollTop = savedScrolls[i] })
-                  } catch (e) {}
-                }
-                const am = /data-autorefresh="(\d+)"/.exec(res.html)
-                if (entry.timer) { clearInterval(entry.timer); entry.timer = null }
-                if (am) entry.timer = setInterval(() => { pipLoad(toolId, '__refresh', null) }, Math.max(1500, parseInt(am[1], 10) || 2000))
+              const ss = mirrorEl.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc, .jr-drawer-body, .tb-hrow')
+              for (const s of ss) {
+                const p = pathOf(s, mirrorEl)
+                if (p) scrolls.push([p, s.scrollTop, s.scrollLeft])
               }
             } catch (e) {}
+            let focusPath = null, selStart = null, selEnd = null
+            try {
+              const ae = win.document.activeElement
+              if (ae && mirrorEl.contains(ae)) {
+                focusPath = pathOf(ae, mirrorEl)
+                if (typeof ae.selectionStart === 'number') { selStart = ae.selectionStart; selEnd = ae.selectionEnd }
+              }
+            } catch (e) {}
+            const clone = src.cloneNode(true)
+            // 脱离 fixed 外壳语义（充满 pip 窗口）；主抽屉被视觉隐藏时镜像保持可见
+            clone.style.position = 'static'
+            clone.style.left = 'auto'; clone.style.right = 'auto'; clone.style.top = 'auto'; clone.style.bottom = 'auto'
+            clone.style.width = '100%'; clone.style.height = '100%'
+            clone.style.maxWidth = 'none'; clone.style.maxHeight = 'none'
+            clone.style.animation = 'none'; clone.style.boxShadow = 'none'; clone.style.borderRadius = '0'; clone.style.border = 'none'
+            clone.style.visibility = 'visible'; clone.style.pointerEvents = 'auto'
+            mirrorEl.innerHTML = ''
+            mirrorEl.appendChild(clone)
+            try { for (const [p, st, sl] of scrolls) { const el = byPath(mirrorEl, p); if (el) { el.scrollTop = st; el.scrollLeft = sl } } } catch (e) {}
+            if (focusPath) {
+              try {
+                const el = byPath(mirrorEl, focusPath)
+                if (el && typeof el.focus === 'function') {
+                  el.focus()
+                  if (selStart != null && typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(selStart, selEnd) } catch (e2) {} }
+                }
+              } catch (e) {}
+            }
           }
-          // 原生事件代理：click [data-action] / change [data-action-onchange]（与抽屉面板协议一致）
-          bodyEl.addEventListener('click', (e) => {
-            const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null
-            if (el && bodyEl.contains(el)) pipLoad(activeRef.current, el.getAttribute('data-action') || '', el)
+          resync()
+          entry.mo = new MutationObserver(() => {
+            if (entry.syncTimer) clearTimeout(entry.syncTimer)
+            entry.syncTimer = setTimeout(() => { entry.syncTimer = null; resync() }, 40)
           })
-          bodyEl.addEventListener('change', (e) => {
-            const el = e.target && e.target.closest ? e.target.closest('[data-action-onchange]') : null
-            if (el && bodyEl.contains(el)) pipLoad(activeRef.current, el.getAttribute('data-action-onchange') || '', el)
-          })
-          // 6. 主题跟随
+          entry.mo.observe(src0, { subtree: true, childList: true, attributes: true, characterData: true })
+          // 5. 事件代理（镜像 → 主 DOM）：click/input/change/keydown 按索引路径回放，
+          //    React 合成事件在主端 root 正常触发；pip 端 preventDefault 防双重状态
+          const relay = (e) => {
+            const t = e.target
+            if (!t || !mirrorEl.contains(t)) return
+            const p = pathOf(t, mirrorEl)
+            const src = drawerRef.current
+            if (!p || !src) return
+            const main = byPath(src, p)
+            if (!main) return
+            if (e.type === 'click') {
+              e.preventDefault()
+              main.click()
+            } else if (e.type === 'input') {
+              try {
+                const proto = main.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+                const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+                if (desc && desc.set) desc.set.call(main, t.value)
+                else main.value = t.value
+                main.dispatchEvent(new Event('input', { bubbles: true }))
+              } catch (err) {}
+            } else if (e.type === 'change') {
+              try {
+                if (main.tagName === 'SELECT') {
+                  main.value = t.value
+                  main.dispatchEvent(new Event('change', { bubbles: true }))
+                } else if (main.type === 'checkbox' || main.type === 'radio') {
+                  main.click()
+                } else {
+                  main.value = t.value
+                  main.dispatchEvent(new Event('change', { bubbles: true }))
+                }
+              } catch (err) {}
+            } else if (e.type === 'keydown') {
+              try { main.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, bubbles: true })) } catch (err) {}
+            }
+          }
+          for (const type of ['click', 'input', 'change', 'keydown']) mirrorEl.addEventListener(type, relay)
+          // 6. 工具条：放大/还原（resizeTo + moveTo 居中）；回主窗口
+          btnBack.onclick = () => closePip()
+          btnMax.onclick = () => {
+            try {
+              if (!entry.enlarged) {
+                entry.baseW = win.outerWidth; entry.baseH = win.outerHeight
+                const sw = window.screen ? window.screen.availWidth : 1600
+                const sh = window.screen ? window.screen.availHeight : 900
+                const w = Math.round(sw * 0.72), h = Math.round(sh * 0.88)
+                win.resizeTo(w, h)
+                win.moveTo(Math.round((sw - w) / 2), Math.round((sh - h) / 2))
+                entry.enlarged = true
+                btnMax.textContent = '⤡ 还原'
+              } else {
+                win.resizeTo(entry.baseW || 560, entry.baseH || 620)
+                entry.enlarged = false
+                btnMax.textContent = '⤢ 放大'
+              }
+            } catch (err) {}
+          }
+          // 7. 主题跟随 + pip 窗口被关（系统 X）→ 释放
           if (themeSvc) entry.themeOff = ctx.on('theme/change', () => syncTheme())
-          // 7. pip 窗口被关（系统 X）→ 释放引用
           win.addEventListener('pagehide', () => {
-            if (entry.timer) { try { clearInterval(entry.timer) } catch (e) {} }
+            if (pipRef.current === entry) { pipRef.current = null; setPipOn(false); setMainHidden(false) }
+            if (entry.syncTimer) { try { clearTimeout(entry.syncTimer) } catch (e) {} }
+            if (entry.mo) { try { entry.mo.disconnect() } catch (e) {} }
             if (typeof entry.themeOff === 'function') { try { entry.themeOff() } catch (e) {} }
-            if (pipRef.current === entry) { pipRef.current = null; setPipOn(false) }
           })
-          // 8. 初始面板 + 关闭主抽屉（互斥）
-          if (activeRef.current) pipLoad(activeRef.current, '', null)
-          store.close()
+          // 并存模型：不关主抽屉（它是镜像事实源，轮询照跑）；用户可点主抽屉 X 仅视觉隐藏（mainHidden）
         } catch (e) {}
       }
       const drawerRef = React.useRef(null)
@@ -1246,7 +1337,6 @@ return {
       )
 
       // 画中画按钮：浏览器支持 Document PiP 才渲染（Chrome/Edge 116+，localhost 安全上下文）
-      const pipSupported = typeof window !== 'undefined' && Boolean(window.documentPictureInPicture)
       const pipButton = !pipSupported ? null : React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
@@ -1307,7 +1397,7 @@ return {
         title: '关闭',
         'aria-label': '关闭',
         onPointerDown: (ev) => ev.stopPropagation(),
-        onClick: (ev) => { ev.stopPropagation(); store.close() },
+        onClick: (ev) => { ev.stopPropagation(); if (pipOn) setMainHidden(true); else store.close() },
       },
         React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' },
           React.createElement('path', { d: 'M2 2l10 10M12 2L2 12' }),
@@ -1358,6 +1448,8 @@ return {
       const style = {}
       if ((dockMode === 'right' || dockMode === 'full') && width) style.width = width + 'px' // 停靠宽度可调（左缘拖拽）
       if (dockMode === 'full' && !width) style.width = '560px' // 三栏停靠默认宽
+      // pip 画中画期间主抽屉可视觉隐藏（DOM 与轮询存活——它是镜像事实源）
+      if (mainHidden) { style.visibility = 'hidden'; style.pointerEvents = 'none' }
       if (dockMode === 'float') {
         if (height) style.height = height + 'px'
         if (pos) {

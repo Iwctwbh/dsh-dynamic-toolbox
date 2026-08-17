@@ -69,7 +69,7 @@ const check = (label, cond, detail) => {
   check('用户/助手消息节点', r.html.indexOf('帮我看下这个目录') >= 0 && r.html.indexOf('好的，我先并行读文件') >= 0)
   check('箭头连接符 ▼', r.html.indexOf('fl-arrow') >= 0 && r.html.indexOf('▼') >= 0)
   // 平行调用：read+grep 同 step → 连线布局（左主干/右工具卡，中间 上=输入▶ 下=◀输出 两条水平线）
-  check('调用连线布局（fl-callblock + fl-wp 连线对）', r.html.indexOf('fl-callblock') >= 0 && r.html.indexOf('fl-wp') >= 0)
+  check('调用泳道布局（fl-lane 三列 + fl-wp 连线对）', r.html.indexOf('fl-lane') >= 0 && r.html.indexOf('fl-wp') >= 0)
   check('输入线 ▶ 右出 / 输出线 ◀ 回左', r.html.indexOf('▶') >= 0 && r.html.indexOf('◀') >= 0)
   check('平行卡片组（read+grep 各一张工具卡）', r.html.indexOf('fl-callside') >= 0 && r.html.indexOf('read') >= 0 && r.html.indexOf('grep') >= 0)
   // 进出关系：连线标签 输入=传入参数摘要，输出=返回结果摘要
@@ -77,10 +77,10 @@ const check = (label, cond, detail) => {
   check('输出线标签=返回结果摘要（file a content）', r.html.indexOf('file a content') >= 0)
   check('工具卡存在（fl-iocard）', r.html.indexOf('fl-iocard') >= 0)
   check('调用状态 ✓ 与耗时', r.html.indexOf('✓') >= 0)
-  // 子代理 git 树 + 进出
-  check('子代理分支符号 ├─', r.html.indexOf('├─') >= 0)
-  check('子代理支线实时步骤（子会话 grep）', r.html.indexOf('child hits') >= 0 || r.html.indexOf('grep') >= 0 && r.html.indexOf('│') >= 0)
-  check('子代理合并符号 ╰─', r.html.indexOf('╰─') >= 0)
+  // 子代理泳道分支（左列入口卡/支线步骤/出口卡）
+  check('子代理入口卡（fl-sub-open）', r.html.indexOf('fl-sub-open') >= 0)
+  check('子代理支线实时步骤（fl-sub-steps + 子会话 grep）', r.html.indexOf('fl-sub-steps') >= 0 && (r.html.indexOf('child hits') >= 0 || r.html.indexOf('grep') >= 0))
+  check('子代理出口卡（fl-sub-close）', r.html.indexOf('fl-sub-close') >= 0)
   check('子代理 入=任务 prompt（description: 调研）', r.html.indexOf('description: 调研') >= 0 || r.html.indexOf('入') >= 0)
   check('子代理 出=返回标记', r.html.indexOf('出') >= 0)
   check('子代理 live 徽章（运行中）', r.html.indexOf('运行中') >= 0)

@@ -283,12 +283,11 @@ return {
       '.fl-lane-main .fl-node{max-width:none}',
       '.fl-lane-side{min-width:0;display:grid;grid-template-columns:84px minmax(0,1fr);gap:6px 8px;align-items:center}',
       '.fl-lane-line{width:1px;align-self:center;flex:1;min-height:26px;background:var(--tb-border,var(--dsw-alias-border-l1,#35363e))}',
-      // 子代理分支块（左列）：入口/出口卡 + 支线步骤；卡片右缘伸横线回中列主干竖线
-      '.fl-lane-sub{min-width:0;display:flex;flex-direction:column;justify-content:center}',
-      '.fl-subcol{display:flex;flex-direction:column;gap:4px;min-width:0}',
-      '.fl-sub-card{position:relative;border:1px solid var(--tb-accent-border,rgba(91,141,239,.45));border-radius:8px;padding:5px 8px;background:var(--tb-accent-bg,rgba(91,141,239,.08));display:flex;flex-direction:column;gap:3px;min-width:0}',
+      // 子代理分支块（左列）：入口/出口卡与主干卡同行（grid 单元格内垂直居中），支线步骤限高滚动；卡片右缘伸横线向主干
+      '.fl-subcol{display:flex;flex-direction:column;gap:6px;min-width:0;justify-content:center}',
+      '.fl-sub-card{position:relative;border:1px solid var(--tb-accent-border,rgba(91,141,239,.45));border-radius:8px;padding:5px 8px;background:var(--tb-accent-bg,rgba(91,141,239,.08));display:flex;flex-direction:column;gap:3px;min-width:0;cursor:pointer}',
       '.fl-sub-card::after{content:"";position:absolute;right:-11px;top:50%;width:10px;height:1px;background:var(--tb-accent-border,rgba(91,141,239,.45))}',
-      '.fl-sub-steps{display:flex;flex-direction:column;gap:2px;padding:3px 4px 3px 8px;margin-left:6px;border-left:1px dashed var(--tb-accent-border,rgba(91,141,239,.4))}',
+      '.fl-sub-steps{display:flex;flex-direction:column;gap:2px;padding:3px 4px 3px 8px;margin-left:6px;border-left:1px dashed var(--tb-accent-border,rgba(91,141,239,.4));max-height:170px;overflow:auto}',
       '.fl-sub-meta{display:flex;align-items:center;gap:6px}',
       '.fl-sub-step{display:flex;align-items:center;gap:4px;min-width:0;font-size:10.5px}',
       '.fl-sub-io{display:flex;align-items:baseline;gap:5px;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;min-width:0}',

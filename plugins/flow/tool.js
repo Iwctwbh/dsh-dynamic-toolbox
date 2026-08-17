@@ -273,47 +273,39 @@ return {
       '</div>'
     }
 
-    // 子代理分支（泳道左列）：入口卡（◆ 子代理+任务摘要）→ 支线步骤 → 出口卡（返回摘要），
-    // 入口/出口卡右缘各伸一条横线回中列主干竖线；中列竖线贯穿表示主干继续
-    const renderSub = async (node) => {
-      const c = node.call
-      let sub = '<div class="fl-subcol">'
-      // 入口卡（向左分出）
-      sub += '<div class="fl-sub-card fl-sub-open' + (c.status === 'pending' ? ' fl-live' : '') + '">' +
+    // 子代理分支内容（左列）：入口卡（可点详情）+ 支线步骤（限高滚动）+ 出口卡
+    const subBranchHtml = async (c) => {
+      let sub = '<div class="fl-sub-card fl-sub-open' + (c.status === 'pending' ? ' fl-live' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击查看完整任务传入/返回">' +
         '<div class="fl-iohead"><span class="fl-tag" style="color:var(--tb-active-text,#7fa7f0);background:rgba(91,141,239,.12)">子代理</span>' +
         '<span class="fl-name">' + esc(c.name) + '</span>' + statusGlyph(c.status, c.dur) + '</div>' +
         '<div class="fl-sub-io"><span class="fl-io-tag">入</span><span class="fl-branch-txt">' + esc(inSummary(c)) + '</span></div>' +
       '</div>'
-      // 支线步骤（子会话事件流，左列内垂直展开）
       const cid = childIdOf(c)
+      let steps = ''
       if (cid) {
         const sub2 = await childRows(cid, 10)
-        sub += '<div class="fl-sub-steps">'
-        sub += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') + '</div>'
+        steps += '<div class="fl-sub-meta"><span class="fl-time">↳ ' + esc(cid.slice(0, 8)) + '… · ' + sub2.total + ' 步</span>' + (sub2.live ? '<span class="fl-tag" style="color:var(--tb-done-text,#81c784)">运行中</span>' : '') + '</div>'
         for (const r of sub2.rows) {
-          sub += '<div class="fl-sub-step">' +
+          steps += '<div class="fl-sub-step">' +
             (r.pill ? '<span class="fl-branch-pill">' + esc(r.pill) + '</span>' : '') +
             '<span class="fl-branch-txt' + (r.pill ? '' : ' fl-branch-ai') + '">' + esc(r.txt) + '</span>' +
             (r.pill ? statusGlyph(r.status, r.dur) : '') +
           '</div>'
         }
-        if (sub2.total > sub2.rows.length) sub += '<div class="fl-sub-step"><span class="fl-time">… 更早 ' + (sub2.total - sub2.rows.length) + ' 步未展开</span></div>'
-        sub += '</div>'
+        if (sub2.total > sub2.rows.length) steps += '<div class="fl-sub-step"><span class="fl-time">… 更早 ' + (sub2.total - sub2.rows.length) + ' 步未展开</span></div>'
       } else if (c.status === 'pending') {
-        sub += '<div class="fl-sub-steps"><div class="fl-sub-step"><span class="fl-time">子代理启动中…</span></div></div>'
+        steps = '<div class="fl-sub-step"><span class="fl-time">子代理启动中…</span></div>'
       }
-      // 出口卡（向左回连主干）
+      if (steps) sub += '<div class="fl-sub-steps">' + steps + '</div>'
       if (c.status !== 'pending') {
         const o = outSummary(c)
-        sub += '<div class="fl-sub-card fl-sub-close">' +
+        sub += '<div class="fl-sub-card fl-sub-close" data-action="fdetail" data-seq="' + c.seq + '" title="点击查看完整任务传入/返回">' +
           '<div class="fl-sub-io"><span class="fl-io-tag">出</span>' +
           '<span class="fl-time">' + fmtDur(c.dur) + '</span>' +
           (o ? '<span class="fl-args">' + esc(o.text) + '</span>' : '') + '</div>' +
         '</div>'
       }
-      sub += '</div>'
-      return '<div class="fl-lane"><div class="fl-lane-sub">' + sub + '</div>' +
-        '<div class="fl-lane-main"><span class="fl-lane-line"></span></div><div></div></div>'
+      return sub
     }
 
     const ARROW = '<div class="fl-lane"><div></div><div class="fl-lane-main"><span class="fl-arrow">▼</span></div><div></div></div>'
@@ -335,27 +327,35 @@ return {
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
       '</div>')
-      parts.push('<div class="tb-note">主干自上而下：用户/助手；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；点卡片在右侧看完整传入/返回；子代理以 git 树分支展开实时步骤</div>')
+      parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点卡片在右侧看完整传入/返回</div>')
       parts.push('</div>')
       // 流程体：tb-pane-body 为 column-reverse——这里以「视觉最新在底」渲染：DOM 先放最新节点，滚动条默认贴底
       parts.push('<div class="tb-pane-body">')
       if (!shown.length) {
         parts.push('<div class="tb-notice">当前会话还没有事件</div>')
       } else {
-        // 子代理分支并行预渲染（串行 await 会让多个子代理分支的 readLog 延迟叠加）
+        // 子代理分支内容并行预取（串行 await 会让多个子代理分支的 readLog 延迟叠加）
         const subHtmls = {}
-        await Promise.all(shown.map(async (n, i) => { if (n.t === 'sub') subHtmls[i] = await renderSub(n) }))
+        await Promise.all(shown.map(async (n, i) => { if (n.t === 'sub') subHtmls[i] = await subBranchHtml(n.call) }))
         const rows = []
         for (let i = 0; i < shown.length; i++) {
           const n = shown[i]
           let h
-          // 助手消息紧跟同步调用组 → 合并为一行（左=助手卡，右=连线+工具卡）
+          // 助手消息紧跟同步调用组 → 合并为一行（中=助手卡，右=连线+工具卡）
           if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'par') {
             h = renderCallBlock(n.it, shown[i + 1], st.expanded)
             i++
+          } else if (n.t === 'msg' && n.it.role === 'ai' && shown[i + 1] && shown[i + 1].t === 'sub') {
+            // 助手消息紧跟子代理 → 合并为分支块：左列=入口卡+支线+出口卡，中列=助手卡 ▼ 下一条消息卡（主干连续不留空白行）
+            const subN = shown[i + 1]
+            const nextMsg = shown[i + 2] && shown[i + 2].t === 'msg' ? shown[i + 2] : null
+            let main = msgCardInner(n.it)
+            if (nextMsg) main += '<span class="fl-arrow">▼</span>' + msgCardInner(nextMsg)
+            h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i + 1] || '') + '</div><div class="fl-lane-main">' + main + '</div><div></div></div>'
+            i += nextMsg ? 2 : 1
           } else if (n.t === 'msg') h = renderMsg(n.it)
           else if (n.t === 'par') h = renderPar(n, st.expanded)
-          else h = subHtmls[i] || ''
+          else h = '<div class="fl-lane"><div class="fl-subcol">' + (subHtmls[i] || '') + '</div><div class="fl-lane-main"><span class="fl-lane-line"></span></div><div></div></div>'
           rows.push(h)
           rows.push(ARROW)
         }

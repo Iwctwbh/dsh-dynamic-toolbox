@@ -21,13 +21,14 @@ Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB
 
 ## Quick start (as a user)
 
-Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a workspace directory.
+Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a workspace directory. **The session must be in 「创造模式」(Creative mode / cordis preset)** — only that preset mounts the `cordis_define` / `cordis_run` tools; other modes (标准/PTC/极简) don't have them, so a rebuild cannot start there.
 
 ```text
 1. Clone this repo and open the repo root as your DSH workspace (repo root = workspace root)
-2. In a DSH session: cordis_define ← plugins/toolbox/payload.json
-3. cordis_run and approve once in the GUI
-4. The framework auto-bootstraps the remaining 28 plugins (selfview asks for one more approval)
+2. Switch the session to 「创造模式」(Creative mode) via the mode selector at the top of the GUI
+3. In a DSH session: cordis_define ← plugins/toolbox/payload.json
+4. cordis_run and approve once in the GUI
+5. The framework auto-bootstraps the remaining 28 plugins (selfview asks for one more approval)
 ```
 
 Credentials (e.g. Jira) live in the Harness credential store or environment variables — never in this repo. Full guide: [`REBUILD.md`](REBUILD.md), plugin authoring: [`PLUGIN-DEV.md`](PLUGIN-DEV.md).
@@ -60,13 +61,14 @@ The whole `.dsh-dynamic-toolbox/` directory is git-ignored runtime state.
 
 ## 使用（把本仓库装进你的 DSH）
 
-前置：已安装并运行 DeepSeek Harness（支持动态 Cordis 插件）；有一个工作区目录。
+前置：已安装并运行 DeepSeek Harness（支持动态 Cordis 插件）；有一个工作区目录。**会话必须处于「创造模式」**（cordis preset）——只有它挂载 `cordis_define` / `cordis_run` 工具；标准/PTC/极简模式没有这些工具，重建无从发起。
 
 ```text
 1. 将本仓库 clone 下来，并把仓库根目录作为 DSH 工作区打开（仓库根 = 工作区根）
-2. 在 DSH 会话中：cordis_define  ←  plugins/toolbox/payload.json
-3. cordis_run，并在 GUI 批准一次
-4. 框架启动自动补齐其余 28 个插件（幂等，全量 ≈ 0.4s；selfview 会再弹一次批准）
+2. 在 GUI 顶部把会话切换到「创造模式」（cordis_* 工具只在该模式存在）
+3. 在 DSH 会话中：cordis_define  ←  plugins/toolbox/payload.json
+4. cordis_run，并在 GUI 批准一次
+5. 框架启动自动补齐其余 28 个插件（幂等，全量 ≈ 0.4s；selfview 会再弹一次批准）
 ```
 
 - 启动集合遵循启停记忆 `<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json`

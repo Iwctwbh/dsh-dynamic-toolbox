@@ -83,6 +83,15 @@ return {
       // 「回到最新」浮标：面板不在底部时显示（column-reverse 滚动容器 scrollTop<-40 / 正常方向 dist>40），点击平滑回底
       '.tb-jump-latest{position:absolute;right:16px;bottom:14px;z-index:6;display:inline-flex;align-items:center;height:27px;padding:0 13px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#454650);background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--tb-accent-text,#7fa7f0);font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);font-family:inherit;animation:jrDrawerUp .16s ease-out}',
       '.tb-jump-latest:hover{border-color:var(--tb-accent-border,rgba(91,141,239,.45))}',
+      // ---- 画中画（Document PiP）镜像窗口：脱离 WebUI 框体的独立小窗 ----
+      '.jr-pip-root{display:flex;flex-direction:column;height:100vh;background:var(--dsw-alias-bg-base,#17181d);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;overflow:hidden;font-family:inherit}',
+      '.jr-pip-tabs{flex:none;display:flex;gap:6px;overflow-x:auto;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);scrollbar-width:thin}',
+      '.jr-pip-body{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}',
+      '.jr-pip-body>.tb-root{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px}',
+      '.jr-pip-root *{scrollbar-width:thin;scrollbar-color:var(--dsw-alias-border-l2,#454650) transparent}',
+      '.jr-pip-root ::-webkit-scrollbar{width:9px;height:9px}',
+      '.jr-pip-root ::-webkit-scrollbar-track{background:transparent}',
+      '.jr-pip-root ::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,#454650);border-radius:5px;border:2px solid transparent;background-clip:padding-box}',
       '.tb-notice{color:var(--dsw-alias-label-secondary,#9a9aa5);font-size:12px;text-align:center;padding:8px 0}',
       '.tb-error{color:var(--dsw-alias-state-error-primary,#ef4444);font-size:12px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--dsw-alias-border-l1,#3a3b44);border-radius:6px;padding:8px 10px;background:var(--dsw-alias-bg-layer-1,#26272e)}',
       // ===== 共享设计系统（tb-）：工具面板 HTML 直接使用；颜色只消费 --tb-* 变量（带兜底），主题插件在 :root 声明即可覆盖 =====
@@ -566,6 +575,131 @@ return {
         try {
           const cur = schemeOf(themeSvc.getTheme()) || themeScheme
           themeSvc.setTheme(cur === 'dark' ? 'light' : 'dark')
+        } catch (e) {}
+      }
+
+      // ---- 画中画（Document PiP）：把面板镜像到系统级独立小窗（脱离 WebUI 框体） ----
+      // 实现：pip 窗口跑原生 DOM 轻量镜像（Tab 芯片 + 面板 HTML + data-action 原生代理 + 自动刷新），
+      // 数据全走 host.call（与抽屉同一 stateRef，状态连续）；与主抽屉互斥（开 pip 关抽屉、开抽屉关 pip）。
+      const pipRef = React.useRef(null) // { win, timer, renderTabs, themeOff } | null
+      const [pipOn, setPipOn] = React.useState(false)
+      const closePip = () => {
+        const cur = pipRef.current
+        pipRef.current = null
+        setPipOn(false)
+        if (!cur) return
+        try { if (cur.timer) clearInterval(cur.timer) } catch (e) {}
+        try { if (typeof cur.themeOff === 'function') cur.themeOff() } catch (e) {}
+        try { cur.win.close() } catch (e) {}
+      }
+      // 抽屉重新打开 → 关闭 pip（互斥）；组件卸载/插件重跑 → 必关 pip（防孤儿窗）
+      React.useEffect(() => { if (isOpen && pipRef.current) closePip() }, [isOpen])
+      React.useEffect(() => () => {
+        const cur = pipRef.current
+        pipRef.current = null
+        if (cur) {
+          try { if (cur.timer) clearInterval(cur.timer) } catch (e) {}
+          try { cur.win.close() } catch (e) {}
+        }
+      }, [])
+      // 工具列表变化 → 刷新 pip 的 Tab 芯片
+      React.useEffect(() => {
+        const cur = pipRef.current
+        if (cur && typeof cur.renderTabs === 'function') cur.renderTabs()
+      }, [tools])
+
+      const openPip = async () => {
+        if (pipRef.current) { closePip(); return }
+        if (typeof window === 'undefined' || !window.documentPictureInPicture) return
+        try {
+          const win = await window.documentPictureInPicture.requestWindow({ width: width || 520, height: 620 })
+          // 1. 克隆样式表（link 克隆 / style 标签深克隆；tb- 设计系统与宿主 dsw- 变量一并带走）
+          for (const sheet of document.styleSheets) {
+            try {
+              if (sheet.href) {
+                const l = win.document.createElement('link')
+                l.rel = 'stylesheet'; l.href = sheet.href
+                win.document.head.appendChild(l)
+              } else if (sheet.ownerNode) {
+                win.document.head.appendChild(sheet.ownerNode.cloneNode(true))
+              }
+            } catch (e) {}
+          }
+          // 2. 主题同步（body[data-ds-dark-theme] + colorScheme；theme/change 跟随）
+          const syncTheme = () => {
+            try {
+              const dark = document.body.hasAttribute('data-ds-dark-theme')
+              win.document.body.toggleAttribute('data-ds-dark-theme', dark)
+              win.document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+            } catch (e) {}
+          }
+          syncTheme()
+          // 3. 容器结构（tabs + body）
+          win.document.body.style.margin = '0'
+          const rootEl = win.document.createElement('div')
+          rootEl.className = 'jr-pip-root'
+          const tabsEl = win.document.createElement('div')
+          tabsEl.className = 'jr-pip-tabs'
+          const bodyEl = win.document.createElement('div')
+          bodyEl.className = 'jr-pip-body'
+          rootEl.appendChild(tabsEl)
+          rootEl.appendChild(bodyEl)
+          win.document.body.appendChild(rootEl)
+          const entry = { win, timer: null, renderTabs: null, themeOff: null }
+          pipRef.current = entry
+          setPipOn(true)
+          // 4. Tab 芯片渲染（点击切换激活工具并加载面板）
+          const renderTabs = () => {
+            tabsEl.innerHTML = ''
+            for (const t of tools) {
+              const b = win.document.createElement('button')
+              b.className = 'tb-tab' + (t.id === activeRef.current ? ' tb-tab-active' : '')
+              b.textContent = t.label
+              b.onclick = () => { setActive(t.id); pipLoad(t.id, '', null) }
+              tabsEl.appendChild(b)
+            }
+          }
+          entry.renderTabs = renderTabs
+          renderTabs()
+          // 5. 面板加载（host.call 直驱；共享 stateRef/htmlRef；自动刷新约定同抽屉）
+          const pipLoad = async (toolId, action, el) => {
+            if (!toolId || pipRef.current !== entry) return
+            try {
+              const fields = {}
+              for (const n of bodyEl.querySelectorAll('[data-field]')) fields[n.getAttribute('data-field')] = n.value == null ? '' : String(n.value)
+              if (el) { const d = {}; for (const k of Object.keys(el.dataset || {})) d[k] = el.dataset[k]; fields.__el = d }
+              const res = await host.call('toolbox/panel', { tool: toolId, action: action || '', fields, state: stateRef.current[toolId] || null, root: currentCwd || undefined, session: currentSessionId || undefined })
+              if (pipRef.current !== entry) return
+              if (res && res.ok) {
+                stateRef.current[toolId] = res.state
+                htmlRef.current[toolId] = res.html
+                bodyEl.innerHTML = res.html
+                const am = /data-autorefresh="(\d+)"/.exec(res.html)
+                if (entry.timer) { clearInterval(entry.timer); entry.timer = null }
+                if (am) entry.timer = setInterval(() => { pipLoad(toolId, '__refresh', null) }, Math.max(1500, parseInt(am[1], 10) || 2000))
+              }
+            } catch (e) {}
+          }
+          // 原生事件代理：click [data-action] / change [data-action-onchange]（与抽屉面板协议一致）
+          bodyEl.addEventListener('click', (e) => {
+            const el = e.target && e.target.closest ? e.target.closest('[data-action]') : null
+            if (el && bodyEl.contains(el)) pipLoad(activeRef.current, el.getAttribute('data-action') || '', el)
+          })
+          bodyEl.addEventListener('change', (e) => {
+            const el = e.target && e.target.closest ? e.target.closest('[data-action-onchange]') : null
+            if (el && bodyEl.contains(el)) pipLoad(activeRef.current, el.getAttribute('data-action-onchange') || '', el)
+          })
+          // 6. 主题跟随
+          if (themeSvc) entry.themeOff = ctx.on('theme/change', () => syncTheme())
+          // 7. pip 窗口被关（系统 X）→ 释放引用
+          win.addEventListener('pagehide', () => {
+            if (entry.timer) { try { clearInterval(entry.timer) } catch (e) {} }
+            if (typeof entry.themeOff === 'function') { try { entry.themeOff() } catch (e) {} }
+            if (pipRef.current === entry) { pipRef.current = null; setPipOn(false) }
+          })
+          // 8. 初始面板 + 关闭主抽屉（互斥）
+          if (activeRef.current) pipLoad(activeRef.current, '', null)
+          store.close()
         } catch (e) {}
       }
       const drawerRef = React.useRef(null)
@@ -1095,6 +1229,22 @@ return {
             ),
       )
 
+      // 画中画按钮：浏览器支持 Document PiP 才渲染（Chrome/Edge 116+，localhost 安全上下文）
+      const pipSupported = typeof window !== 'undefined' && Boolean(window.documentPictureInPicture)
+      const pipButton = !pipSupported ? null : React.createElement('button', {
+        type: 'button',
+        className: 'jr-overlay-close',
+        title: '画中画：把工具箱放到独立小窗（脱离主窗口，可拖到任意位置）',
+        'aria-label': '画中画',
+        onPointerDown: (ev) => ev.stopPropagation(),
+        onClick: (ev) => { ev.stopPropagation(); openPip() },
+      },
+        React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3 },
+          React.createElement('rect', { x: 1.5, y: 3, width: 11, height: 8, rx: 1 }),
+          React.createElement('rect', { x: 7.5, y: 7, width: 3.6, height: 2.8, rx: 0.5, fill: 'currentColor', stroke: 'none' }),
+        ),
+      )
+
       const gearButton = React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
@@ -1458,6 +1608,7 @@ return {
         },
           React.createElement('span', { className: 'jr-drawer-title' }, managing ? '工具箱 · 管理' : '工具箱'),
           themeButton,
+          pipButton,
           gearButton,
           dockButton,
           closeButton,

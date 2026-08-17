@@ -6,13 +6,14 @@
 >
 > 中文文档见下方 [中文 section](#中文文档)。
 
-![drawer](docs/screenshot.jpg)
+![工具箱抽屉 · 实时流程 Tab](docs/screenshot.png)
 
 Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB stub, the implementation lives on disk, so code edits take effect by simply re-running the plugin — no re-define, no re-approval.
 
 ## Features
 
 - **Framework plugin (tbx)**: Host-side tool registry + RPC, Client-side drawer / tab bar / shared HTML panel shell (tb- design system)
+- **Live flow (流程)**: the drawer's default tab — renders the current session as a real-time flowgraph with subagent branches and parallel-call groups (see spotlight below)
 - **Project tools**: Jira (query/archive), Git (history/diff), workspace file tree
 - **Utilities**: trace, HTTP client, ports, regex tester, codec, text diff, cron explainer, generator
 - **Session insight**: token usage, system-prompt assembly, context window, tool list, full-text search, lineage tree, multi-model compare
@@ -20,6 +21,15 @@ Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB
 - **Self-inspection**: selfview (screenshot / semantic snapshot / ui_* model tools)
 - **Bootstrap rebuild**: the framework auto-defines and starts all missing plugins from `plugins.json` on startup (idempotent, ~0.4s for all 28), honoring per-plugin enable memory
 - **Contract smoke tests**: `node smoke.mjs` runs 13 simulation suites against real plugin impls with mocked ctx/services
+
+## Spotlight: Live Flow (流程)
+
+The drawer's default tab turns the **current session into a living flowgraph**, silently auto-refreshing every 2s (pausable via the live toggle):
+
+- **Three-lane layout** — the center trunk walks user/assistant steps top-down; each tool call branches right with its input card ▶ and returns left with its output card ◀ (green on success, red on error, dashed while in flight)
+- **Subagent branches** — a spawned child session grows its own left-column branch (entry / steps / exit) on the same row as the trunk card that started it, with steps sampled from the child's own session log
+- **Parallel groups** — simultaneous tool calls in one step are wrapped in a dashed 「并行 ×N」 frame; the running call pulses with a highlight so you always see exactly which step the agent is on
+- **Zero-jump details** — click a tool card for its full arguments/result, click a message card for full content with model + token metadata; details open in a side overlay instead of inflating the flow, so expand/collapse never moves your scroll position
 
 ## Quick start (as a user)
 
@@ -114,9 +124,18 @@ The whole `.dsh-dynamic-toolbox/` directory is git-ignored runtime state.
 | 项目工具 | jira（查询/归档）、git（历史/diff）、files（文件树） |
 | 主题 | theme-teal / theme-amber（互斥，按需激活） |
 | 实用工具 | trace、http、ports、regex、codec、txtdiff、cron、gen |
-| 会话洞察 | usage、prompt、context、tools、search、lineage、compare |
+| 会话洞察 | flow（实时流程图）、usage、prompt、context、tools、search、lineage、compare |
 | AI 工具 | ask、translate、promptopt、commitmsg、review、aisummary、aiusage（台账） |
 | 界面自查 | selfview（截屏/语义快照/ui_* 模型工具） |
+
+## 亮点：实时流程（流程 Tab）
+
+抽屉默认 Tab，把**当前会话实时画成流程图**，每 2s 静默自刷（live 开关可暂停）：
+
+- **三列泳道**：中列主干自上而下走「用户/助手」步骤；工具调用右出输入卡 ▶、左回输出卡 ◀（成功绿色、错误红色、进行中虚线）
+- **子代理分支**：子会话在左列长出独立支线（入口/支线/出口），与触发它的主干卡同行不留空白，支线步骤取自子会话自己的日志
+- **并行分组**：同一步的多个并行调用用虚线框 +「并行 ×N」角标圈成一组；进行中的调用高亮脉冲，一眼看到智能体正跑到哪一步
+- **零跳跃详情**：点工具卡看完整传入/返回，点消息卡看完整内容（含模型/tokens 元信息）；详情挂右侧浮层、不撑高流程内容，展开收起滚动位置不动
 
 ## 日常迭代
 

@@ -266,12 +266,23 @@ return {
       // 卡片自适应宽度（不占满，凸显左右分支结构）；入/出两行展示调用的传入与返回
       '.fl-row{display:flex;min-width:0}',
       '.fl-node{max-width:520px;min-width:0;border:1px solid var(--tb-border,var(--dsw-alias-border-l1,#35363e));border-left-width:2px;border-radius:8px;padding:7px 10px;display:flex;flex-direction:column;gap:3px;background:var(--tb-input-bg,var(--dsw-alias-bg-layer-1,#26272e));box-shadow:0 2px 8px rgba(0,0,0,.18)}',
+      // 消息卡可点开详情（与工具卡同一交互）：手势 + 选中高亮
+      '.fl-node[data-action]{cursor:pointer;transition:border-color .12s}',
+      '.fl-node[data-action]:hover{border-color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#6f707c))}',
+      // 选中高亮：tint 叠在实色底上（直接用半透明 accent 底会被身后主干线穿透）
+      '.fl-node.fl-on{border-color:var(--tb-accent-border,rgba(91,141,239,.6));background:linear-gradient(var(--tb-accent-bg,rgba(91,141,239,.08)),var(--tb-accent-bg,rgba(91,141,239,.08))),var(--tb-input-bg,var(--dsw-alias-bg-layer-1,#26272e))}',
+      '.fl-model{flex:none;font-size:10px;font-family:ui-monospace,Consolas,monospace;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));background:var(--dsw-alias-bg-base,#17181d);border-radius:3px;padding:1px 5px}',
       '.fl-glyph{flex:none;font-size:9px;line-height:1;opacity:.9}',
       '.fl-node-head{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}',
       '.fl-tag{flex:none;display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.3px}',
       '.fl-time{flex:none;font-size:10.5px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-variant-numeric:tabular-nums}',
       '.fl-preview{font-size:12px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tb-text,var(--dsw-alias-label-primary,#dcdee4));max-width:500px}',
-      '.fl-arrow{flex:none;width:100%;text-align:center;line-height:1;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-size:10px;opacity:.7}',
+      // ▼ 箭头自带画布底色块：主干竖线从下方穿过时字形不被线划过
+      // （不用整体 opacity——色块必须 100% 不透明才盖得住线；字形色与线同 token，箭头实一点正好突出）
+      '.fl-arrow{flex:none;align-self:center;line-height:1;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));font-size:10px;background:var(--dsw-alias-bg-base,#17181d);padding:0 3px;border-radius:3px}',
+      // 泳道内连接符：上=弹性空隙（::before 主干线透出，长短随行高自适应）+ ▼ 贴内容顶；下=对称弹性空间保持卡片居中
+      '.fl-conn{flex:1;min-height:16px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:0}',
+      '.fl-conn-gap{flex:1;min-height:4px}',
       // 流程图画布：bg-base 实色 + blueprint 网格线（中性灰蓝极低透明，明暗两主题均隐约可见；实色底防透明皮肤重影）
       '.jr-drawer [data-flow] .tb-pane-body{background:var(--dsw-alias-bg-base,#17181d);border-radius:8px;background-image:linear-gradient(rgba(128,138,150,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(128,138,150,.055) 1px,transparent 1px);background-size:22px 22px}',
       '.fl-par{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}',
@@ -279,13 +290,22 @@ return {
       '.fl-args{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       // ---- 三列泳道（手绘参考图 2：左=子代理分支区 / 中=主干用户·助手 / 右=工具调用卡） ----
       '.fl-lane{display:grid;grid-template-columns:minmax(96px,140px) minmax(0,1fr) minmax(0,1.25fr);gap:0 10px;min-width:0;align-items:stretch}',
-      '.fl-lane-main{min-width:0;display:flex;flex-direction:column;justify-content:center}',
+      '.fl-lane-main{min-width:0;display:flex;flex-direction:column;justify-content:center;position:relative}',
+      // 主干竖线贯通：每行中列全高画线，且向下多延 4px 盖住容器行间距（gap:4px），行间首尾相接成一条连续线；
+      // 卡片不透明底自然盖线、只在空隙露出；线色与 ▼ 箭头一致（text-3 + .7 透明度），2.5px
+      '.fl-lane-main::before{content:"";position:absolute;left:calc(50% - 1.25px);top:0;bottom:-4px;width:2.5px;background:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));opacity:.7;z-index:0}',
+      '.fl-lane-main>*{position:relative;z-index:1}',
       '.fl-lane-main .fl-node{max-width:none}',
       '.fl-lane-side{min-width:0;display:grid;grid-template-columns:84px minmax(0,1fr);gap:6px 8px;align-items:center}',
-      '.fl-lane-line{width:1px;align-self:center;flex:1;min-height:26px;background:var(--tb-border,var(--dsw-alias-border-l1,#35363e))}',
-      // 子代理分支块（左列）：与中列同高（行高由中列主干卡决定，分支不撑行）；
-      // 入口卡贴顶、支线步骤中间限高滚动、出口卡贴底；卡片右缘伸横线向主干
-      '.fl-subcol{display:flex;flex-direction:column;gap:5px;min-width:0;align-self:stretch}',
+      // 并行调用组外框：同一步骤 >1 个调用时虚线框圈成一组，右上「并行 ×N」角标（底色盖边框）
+      '.fl-lane-side.fl-grp{position:relative;border:1px dashed var(--tb-border-2,var(--dsw-alias-border-l2,#454650));border-radius:10px;padding:10px 10px;margin:4px 0}',
+      '.fl-grp-tag{position:absolute;top:-7px;right:10px;padding:0 5px;font-size:9px;line-height:13px;font-weight:600;color:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));background:var(--dsw-alias-bg-base,#17181d);border-radius:3px;letter-spacing:.3px}',
+      '.fl-lane-line{width:2.5px;align-self:center;flex:1;min-height:26px;background:var(--tb-text-3,var(--dsw-alias-label-tertiary,#777884));opacity:.7}',
+      // 子代理分支块（左列）：height:0+min-height:100% 经典技巧——分支不参与行高计算（行高由中列主干决定），
+      // 自身拉伸进行高：入口贴顶、支线步骤中间限高滚动、出口贴底（= 中列最后一张卡下缘，对齐语义）；卡片右缘伸横线向主干
+      '.fl-subcol{display:flex;flex-direction:column;gap:5px;min-width:0;height:0;min-height:100%}',
+      // 分支行保底高度：中列只有一根竖线时（孤立分支行）分支不被压没
+      '.fl-lane:has(> .fl-subcol){min-height:120px}',
       '.fl-sub-card{position:relative;flex:none;border:1px solid var(--tb-accent-border,rgba(91,141,239,.45));border-radius:8px;padding:5px 8px;background:var(--tb-accent-bg,rgba(91,141,239,.08));display:flex;flex-direction:column;gap:3px;min-width:0;cursor:pointer}',
       '.fl-sub-card::after{content:"";position:absolute;right:-11px;top:50%;width:10px;height:1px;background:var(--tb-accent-border,rgba(91,141,239,.45))}',
       '.fl-sub-steps{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:3px 4px 3px 8px;margin-left:6px;border-left:1px dashed var(--tb-accent-border,rgba(91,141,239,.4))}',
@@ -316,6 +336,8 @@ return {
       '.fl-live{border-color:var(--tb-accent-border,rgba(91,141,239,.65))!important;animation:flPulse 1.6s ease-in-out infinite}',
       // LIVE 脉冲点（进行中调用卡头部，蓝图风）
       '.fl-live .fl-iohead::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tb-done-text,#81c784);animation:flBlink 1.1s ease-in-out infinite}',
+      // 助手卡进行中同款流光 + 脉冲点（与工具卡视觉一致）
+      '.fl-live .fl-node-head::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tb-done-text,#81c784);animation:flBlink 1.1s ease-in-out infinite}',
       '@keyframes flBlink{0%,100%{opacity:1}50%{opacity:.25}}',
       '@keyframes flPulse{0%,100%{box-shadow:0 0 0 1.5px var(--tb-accent-ring,rgba(91,141,239,.16))}50%{box-shadow:0 0 0 4px var(--tb-accent-ring,rgba(91,141,239,.16))}}',
       '.fl-iohead{display:flex;align-items:center;gap:6px;min-width:0}',
@@ -843,17 +865,25 @@ return {
 
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
+        if (!panelRef.current) return
         const saved = htmlScrollRef.current
-        if (!saved || !panelRef.current) return
         htmlScrollRef.current = null
-        if (saved.tool !== activeRef.current) return // 切工具不恢复（新面板回默认贴底）
+        if (saved && saved.tool === activeRef.current) {
+          try {
+            const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
+            scrollers.forEach((s, i) => { if (i < saved.scrolls.length) s.scrollTop = saved.scrolls[i] })
+          } catch (e) {}
+          return
+        }
+        // 切工具/新面板不恢复旧位置：正常方向（tb-pane-col）容器默认滚到最底查看
+        // （上下文/提示词/搜索/Jira/谱系等；column-reverse 面板天然贴底，无需处理）
         try {
-          const scrollers = panelRef.current.querySelectorAll('.tb-pane-body, .tb-code, .fl-pre, .tb-desc')
-          scrollers.forEach((s, i) => { if (i < saved.scrolls.length) s.scrollTop = saved.scrolls[i] })
+          panelRef.current.querySelectorAll('.tb-pane-body.tb-pane-col').forEach((s) => { s.scrollTop = s.scrollHeight })
         } catch (e) {}
       }, [html])
 
       // 「回到最新」浮标：面板滚动容器不在底部时显示；scroll 不冒泡，挂容器捕获阶段（innerHTML 重渲不影响）
+      // 依赖含 html：切管理视图/Tab 后 .tb-frame 是新建 DOM 节点，必须重新挂监听器（只挂 isOpen 会挂在已销毁节点上，浮标失效）
       const [showJump, setShowJump] = React.useState(false)
       React.useEffect(() => {
         if (!isOpen) return undefined
@@ -870,7 +900,7 @@ return {
         }
         root.addEventListener('scroll', onScroll, true)
         return () => { try { root.removeEventListener('scroll', onScroll, true) } catch (e) {} }
-      }, [isOpen])
+      }, [isOpen, html])
       const jumpToLatest = () => {
         const s = panelRef.current && panelRef.current.querySelector('.tb-pane-body')
         if (s) s.scrollTo({ top: s.classList.contains('tb-pane-col') ? s.scrollHeight : 0, behavior: 'smooth' })
@@ -1033,7 +1063,9 @@ return {
         setTools(list)
         setActive((cur) => {
           if (cur && list.some((t) => t.id === cur)) return cur
-          return list.length ? list[0].id : null
+          // 无有效记忆时的默认 Tab：会话「流程」（用户指定）；没有 flow 才退到列表第一个
+          const flow = list.find((t) => t.id === 'flow')
+          return flow ? flow.id : (list.length ? list[0].id : null)
         })
       }
 
@@ -1181,7 +1213,8 @@ return {
       React.useEffect(() => {
         // 轮询减负：plugins 清单只有管理视图需要——普通模式只刷 tools（RPC  chatter 减半）
         const disp = ctx.interval(() => { if (store.isOpen()) { refreshTools(); if (managingRef.current) refreshPlugins() } }, 1500)
-        const offOpen = store.subscribe(() => { if (store.isOpen()) { refreshTools(); refreshPlugins() } })
+        // 打开抽屉时默认落在会话「流程」Tab（用户指定）；抽屉打开期间的 tab 切换与记忆逻辑不变
+        const offOpen = store.subscribe(() => { if (store.isOpen()) { setActive('flow'); refreshTools(); refreshPlugins() } })
         refreshTools()
         refreshPlugins()
         return () => { try { disp() } catch (e) {} offOpen() }
@@ -1214,7 +1247,10 @@ return {
         const el = t && t.closest ? t.closest('[data-action]') : null
         if (!el) return
         e.preventDefault()
-        loadPanel(active, el.getAttribute('data-action') || '', el)
+        const act = el.getAttribute('data-action') || ''
+        // 抽屉本地动作（不进 RPC）：面板头部「↓ 最新」按钮，与右下角浮标同一跳转逻辑
+        if (act === 'jump-latest') { jumpToLatest(); return }
+        loadPanel(active, act, el)
       }
 
       function onPanelKeyDown(e) {

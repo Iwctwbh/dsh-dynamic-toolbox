@@ -2,6 +2,8 @@
 
 > A session toolbox for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness): 1 framework + 28 tool plugins as dynamic Cordis plugins · MIT License
 >
+> **v2026.08.17** — 流程图升级：并行组虚线框、混合步骤统一归并（子代理分支不再落单）、消息卡详情浮层/模型 tag/进行中流光、连接符「先线后箭头」；抽屉：默认「流程」Tab、「回到最新」修复、正常方向面板默认贴底。
+>
 > 中文文档见下方 [中文 section](#中文文档)。
 
 ![drawer](docs/screenshot.jpg)

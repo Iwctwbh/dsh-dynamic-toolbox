@@ -9,6 +9,7 @@ return {
   apply(ctx) {
     const slots = ctx.get('slots')
     if (slots === undefined) return
+    const themeSvc = ctx.get('theme')
 
     styles.insert([
       '.tb-entry{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;margin:0 4px 0 0;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#26272e);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;appearance:none;box-sizing:border-box;font-family:inherit}',
@@ -503,9 +504,29 @@ return {
       const [pluginFilter, setPluginFilter] = React.useState('')
       const [tabFilter, setTabFilter] = React.useState('') // 工具搜索（整行长条；仅会话内存）
       const [cat, setCat] = React.useState(() => { const s = lsRead(); return s && typeof s.cat === 'string' ? s.cat : 'ai' }) // 激活分类（localStorage 记忆）
+      const [activeByCat, setActiveByCat] = React.useState(() => { const s = lsRead(); return (s && s.activeByCat && typeof s.activeByCat === 'object') ? s.activeByCat : {} }) // 各分类最近选中的工具（切分类时恢复）
       const [catOverrides, setCatOverrides] = React.useState(() => { const s = catsRead(); return (s && s.overrides && typeof s.overrides === 'object') ? s.overrides : {} }) // 管理树拖拽改归属的结果
       const [collapsedCats, setCollapsedCats] = React.useState(() => { const s = catsRead(); return (s && s.collapsed && typeof s.collapsed === 'object') ? s.collapsed : {} })
       const [dragId, setDragId] = React.useState(null) // 管理树正在拖拽的条目 id（entryId）
+      // 明暗主题：theme 服务持有偏好；colorScheme 是当前生效的 light/dark（system 偏好时为解析结果）
+      const [themeScheme, setThemeScheme] = React.useState(() => {
+        try { const s = themeSvc && themeSvc.getTheme(); return (s && (s.colorScheme === 'dark' || s.colorScheme === 'light')) ? s.colorScheme : 'dark' } catch (e) { return 'dark' }
+      })
+      React.useEffect(() => {
+        if (!themeSvc) return undefined
+        const off = ctx.on('theme/change', (snap) => {
+          try { if (snap && (snap.colorScheme === 'dark' || snap.colorScheme === 'light')) setThemeScheme(snap.colorScheme) } catch (e) {}
+        })
+        return typeof off === 'function' ? off : undefined
+      }, [])
+      const toggleTheme = () => {
+        if (!themeSvc) return
+        try {
+          const snap = themeSvc.getTheme()
+          const cur = snap && (snap.colorScheme === 'dark' || snap.colorScheme === 'light') ? snap.colorScheme : themeScheme
+          themeSvc.setTheme(cur === 'dark' ? 'light' : 'dark')
+        } catch (e) {}
+      }
       const drawerRef = React.useRef(null)
       const panelRef = React.useRef(null)
       const stateRef = React.useRef({})
@@ -517,8 +538,8 @@ return {
       const activeRef = React.useRef(null) // 延迟回调里取最新 active（重启落定后的面板刷新）
       activeRef.current = active
 
-      // 停靠模式与激活 Tab 变化即记忆（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
-      React.useEffect(() => { lsWrite({ dockMode, active }) }, [dockMode, active])
+      // 停靠模式/激活 Tab/分类工具记忆变化即落盘（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
+      React.useEffect(() => { lsWrite({ dockMode, active, activeByCat }) }, [dockMode, active, activeByCat])
 
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
@@ -981,6 +1002,25 @@ return {
 
       const curW = () => width || 520
 
+      // 主题切换按钮：暗色下显示太阳（点击切亮），亮色下显示月亮（点击切暗）；theme 服务缺失时不渲染
+      const themeButton = !themeSvc ? null : React.createElement('button', {
+        type: 'button',
+        className: 'jr-overlay-close',
+        title: themeScheme === 'dark' ? '切换到亮色主题' : '切换到暗色主题',
+        'aria-label': '切换明暗主题',
+        onPointerDown: (ev) => ev.stopPropagation(),
+        onClick: (ev) => { ev.stopPropagation(); toggleTheme() },
+      },
+        themeScheme === 'dark'
+          ? React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round' },
+              React.createElement('circle', { cx: 7, cy: 7, r: 2.6 }),
+              React.createElement('path', { d: 'M7 1.2v1.4M7 11.4v1.4M1.2 7h1.4M11.4 7h1.4M2.9 2.9l1 1M10.1 10.1l1 1M11.1 2.9l-1 1M3.9 10.1l-1 1' }),
+            )
+          : React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', strokeLinejoin: 'round' },
+              React.createElement('path', { d: 'M12.2 8.7A5.2 5.2 0 1 1 5.3 1.8a4.4 4.4 0 0 0 6.9 6.9z' }),
+            ),
+      )
+
       const gearButton = React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
@@ -989,9 +1029,11 @@ return {
         onPointerDown: (ev) => ev.stopPropagation(),
         onClick: (ev) => { ev.stopPropagation(); const next = !managing; setManaging(next); if (next) { refreshPlugins(); loadRebuildHistory(); loadAiUsage() } },
       },
+        // sliders 图标（横线+滑块）：明确表示「管理/调节」，与明暗切换的太阳/月亮区分开
         React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round' },
-          React.createElement('circle', { cx: 7, cy: 7, r: 2.2 }),
-          React.createElement('path', { d: 'M7 1.2v1.7M7 11.1v1.7M1.2 7h1.7M11.1 7h1.7M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2' }),
+          React.createElement('path', { d: 'M1.8 4.2h10.4M1.8 9.8h10.4' }),
+          React.createElement('circle', { cx: 9.2, cy: 4.2, r: 1.6 }),
+          React.createElement('circle', { cx: 4.8, cy: 9.8, r: 1.6 }),
         ),
       )
 
@@ -1096,7 +1138,19 @@ return {
 
       // ---- 分类归属与迁移（导航行与管理树共用同一 catOf 数据源） ----
       const catOf = (id) => catOverrides[id] || DEFAULT_CAT[id] || 'dev'
-      const pickCat = (id) => { setCat(id); lsWrite({ cat: id }) }
+      const pickCat = (id) => {
+        if (id === cat) return
+        // 记住旧分类当前选择；切到新分类后恢复其上次选中的工具，无记录（或已停）则选该分类第一个
+        const next = Object.assign({}, activeByCat)
+        if (active) next[cat] = active
+        setActiveByCat(next)
+        setCat(id)
+        lsWrite({ cat: id, activeByCat: next })
+        const inCat = tools.filter((t) => catOf(t.id) === id)
+        const remembered = next[id]
+        const target = remembered && inCat.some((t) => t.id === remembered) ? remembered : (inCat.length ? inCat[0].id : null)
+        setActive(target)
+      }
       const moveNode = (id, toCat) => {
         if (!id || !toCat) return
         if (catOf(id) === toCat) return
@@ -1309,7 +1363,7 @@ return {
         )
       } else if (tools.length === 0) {
         body = React.createElement('div', { className: 'tb-empty' },
-          '暂无工具\n运行工具插件（如 Jira）后自动出现在这里；已停止的插件可在右上角齿轮里重新启动',
+          '暂无工具\n运行工具插件（如 Jira）后自动出现在这里；已停止的插件可在右上角管理按钮里重新启动',
         )
       } else {
         body = React.createElement('div', { className: 'tb-frame', ref: panelRef, onClick: onPanelClick, onKeyDown: onPanelKeyDown },
@@ -1334,6 +1388,7 @@ return {
           onPointerCancel: onHeaderUp,
         },
           React.createElement('span', { className: 'jr-drawer-title' }, managing ? '工具箱 · 管理' : '工具箱'),
+          themeButton,
           gearButton,
           dockButton,
           closeButton,
@@ -1350,7 +1405,7 @@ return {
               key: c.id,
               type: 'button',
               className: 'tb-chip' + (!searching && c.id === effCat ? ' tb-chip-on' : ''),
-              title: '分类「' + c.label + '」；管理页（右上角齿轮）可把节点拖到别的分类',
+              title: '分类「' + c.label + '」；管理页（右上角管理按钮）可把节点拖到别的分类',
               onClick: () => pickCat(c.id),
             }, c.label + ' · ' + catCounts[c.id]))),
           React.createElement(HRow, { className: 'tb-hrow tb-tools' },

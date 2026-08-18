@@ -24,6 +24,30 @@ return {
     if (slots === undefined) return
     const themeSvc = ctx.get('theme')
 
+    // ===== localStorage 变化事件桥（v6.5）=====
+    // app-shell 每次切会话都会写 localStorage['dsh.sessions.current']（浏览器全局权威）。
+    // 抽屉主实例挂在宿主会话下，useSessions 不响应 UI 切会话——本桥 patch Storage.setItem，
+    // 写入该 key 的瞬间 dispatch 自定义事件，抽屉监听后立即读取（零延迟），替代轮询主路径。
+    // 副作用极小（仅多发一个事件）；多实例共用一个 patch（__tbPatched 守卫），主实例停止时恢复。
+    try {
+      if (typeof localStorage !== 'undefined' && typeof window !== 'undefined') {
+        const proto = Object.getPrototypeOf(localStorage)
+        const orig = proto && proto.setItem
+        if (orig && !orig.__tbPatched) {
+          const wrapped = function (k, v) {
+            const r = orig.apply(this, arguments)
+            try { if (k === 'dsh.sessions.current') window.dispatchEvent(new CustomEvent('tb-session-changed', { detail: v })) } catch (e) {}
+            return r
+          }
+          wrapped.__tbPatched = true
+          proto.setItem = wrapped
+          ctx.effect(() => () => {
+            try { if (proto.setItem === wrapped) proto.setItem = orig } catch (e) {}
+          })
+        }
+      }
+    } catch (e) {}
+
     styles.insert([
       '.tb-entry{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;margin:0 4px 0 0;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#26272e);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;appearance:none;box-sizing:border-box;font-family:inherit}',
       '.tb-entry:hover{background:var(--dsw-alias-bg-layer-2,#30313a)}',
@@ -883,6 +907,8 @@ return {
       managingRef.current = managing
       const activeRef = React.useRef(null) // 延迟回调里取最新 active（重启落定后的面板刷新）
       activeRef.current = active
+      const retryCountRef = React.useRef({}) // toolId -> 面板加载失败重试次数（一次性重试，非轮询；成功清零）
+      const attemptedRef = React.useRef({}) // toolId -> 面板请求已发起（首开死锁兜底用：tools 补齐后补打一次，之后不再重复）
 
       // 停靠模式/激活 Tab/分类工具记忆变化即落盘（宽/高/浮动位置在手势结束时单独落盘，避免每帧写）
       React.useEffect(() => { lsWrite({ dockMode, active, activeByCat }) }, [dockMode, active, activeByCat])
@@ -943,12 +969,47 @@ return {
         if (s) s.scrollTo({ top: s.classList.contains('tb-pane-col') ? s.scrollHeight : 0, behavior: 'smooth' })
       }
 
-      const currentCwd = props.useSessions((s) => {
+      // —— 当前会话/工作区解析（v6.5）——
+      // 抽屉主实例挂在宿主会话（toolbox-host-*）下，其 useSessions 不响应浏览器 UI 切会话；
+      // app-shell 会把当前会话写入 localStorage['dsh.sessions.current']（浏览器全局权威）。
+      // 来源：localStorage 事件桥（tb-session-changed，切会话零延迟，主路径）
+      // + useSessions hook（响应式兜底）+ useState 初始化读取（无轮询）。
+      const readLsSession = () => {
+        try {
+          if (typeof localStorage === 'undefined') return undefined
+          const raw = localStorage.getItem('dsh.sessions.current')
+          if (!raw) return undefined
+          const p = JSON.parse(raw)
+          return p && typeof p.sessionId === 'string' && p.sessionId ? p.sessionId : undefined
+        } catch (e) { return undefined }
+      }
+      const [lsSession, setLsSession] = React.useState(readLsSession)
+      // 事件桥响应（v6.5）：app-shell 写 localStorage['dsh.sessions.current'] 的瞬间
+      // 触发 tb-session-changed（见 apply 层 patch），立即刷新——零延迟，替代轮询主路径。
+      React.useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        const onChanged = () => setLsSession(readLsSession())
+        window.addEventListener('tb-session-changed', onChanged)
+        return () => { try { window.removeEventListener('tb-session-changed', onChanged) } catch (e) {} }
+      }, [])
+      const hookSession = props.useSessions((s) => (s && s.current ? String(s.current) : undefined))
+      const currentSessionId = (hookSession || lsSession) || undefined
+      // cwd：按 currentSessionId 经 Host RPC 查询（宿主视角 byId 记录不可靠）；hook 按自身 current 查作兜底
+      const [sessionCwd, setSessionCwd] = React.useState(undefined)
+      React.useEffect(() => {
+        let alive = true
+        if (!currentSessionId) { setSessionCwd(undefined); return undefined }
+        host.call('toolbox/session-info', { session: currentSessionId })
+          .then((r) => { if (alive && r && r.ok && typeof r.cwd === 'string') setSessionCwd(r.cwd) })
+          .catch(() => {})
+        return () => { alive = false }
+      }, [currentSessionId])
+      const hookCwd = props.useSessions((s) => {
         if (!s || !s.current) return undefined
         const row = s.byId && s.byId[s.current]
         return row && typeof row.cwd === 'string' && row.cwd ? row.cwd : undefined
       })
-      const currentSessionId = props.useSessions((s) => (s && s.current ? String(s.current) : undefined))
+      const currentCwd = sessionCwd || hookCwd
       // cwd 用 ref 固定：1.5s 轮询 interval 持有旧闭包，读取 ref 才能跟随「切工作区」拿到最新激活 cwd
       const cwdRef = React.useRef(currentCwd)
       cwdRef.current = currentCwd
@@ -971,6 +1032,7 @@ return {
 
       async function loadPanel(toolId, action, el, opts) {
         if (!toolId) { setHtml(null); return }
+        attemptedRef.current[toolId] = true // 标记已发起请求（refreshTools 兜底据此判定是否补打）
         const silent = Boolean(opts && opts.silent) // 静默刷新（自动轮询）：不转圈、不清错误
         const seq = (seqRef.current[toolId] || 0) + 1
         seqRef.current[toolId] = seq
@@ -995,7 +1057,9 @@ return {
               for (const s of locked) s.disabled = true
             }
           }
-          const res = await host.call('toolbox/panel', {
+          // 超时保护（v6.5.3）：首次打开 RPC 通道未就绪时 host.call 可能永久 pending——
+          // 5s 无响应即视为失败，走下方一次性重试，避免面板永久停在「加载面板…」
+          const callP = host.call('toolbox/panel', {
             tool: toolId,
             action: action || '',
             fields,
@@ -1003,8 +1067,13 @@ return {
             root: currentCwd || undefined,
             session: currentSessionId || undefined,
           })
+          const timeoutP = new Promise((_, reject) => {
+            try { ctx.timeout(() => reject(new Error('面板请求超时（5s）')), 5000) } catch (e) {}
+          })
+          const res = await Promise.race([callP, timeoutP])
           if (seqRef.current[toolId] !== seq) return // 已有更新的请求发出：过期响应直接丢弃（联动切换竞态修复）；DOM 由新请求的响应接管
           if (res && res.ok) {
+            retryCountRef.current[toolId] = 0 // 成功：清零一次性重试计数
             stateRef.current[toolId] = res.state
             htmlRef.current[toolId] = res.html
             // 任何动作都保存滚动位置（自动轮询/展开详情/提交等）：全量 innerHTML 重渲染会丢滚动/选择，
@@ -1064,15 +1133,31 @@ return {
           } else {
             unlock() // 失败未重渲染：恢复 select 可用
             setError((res && res.error) || '面板加载失败')
+            retryOnce(toolId)
           }
         } catch (e) {
           if (seqRef.current[toolId] === seq) {
             unlock() // 异常未重渲染：恢复 select 可用
             setError('面板请求异常: ' + String((e && e.message) || e))
+            retryOnce(toolId)
           }
         } finally {
           if (seqRef.current[toolId] === seq) setBusyTool((cur) => (cur === toolId ? null : cur))
         }
+      }
+      // 一次性失败重试（v6.5.3，非轮询）：瞬时失败（首次打开通道未就绪/超时）时延迟重试，
+      // 最长 2 次、间隔 1.2s；仅当抽屉仍打开且 active 未变才重试。成功清零（见 loadPanel 成功分支）。
+      function retryOnce(toolId) {
+        if ((retryCountRef.current[toolId] || 0) >= 2) return
+        retryCountRef.current[toolId] = (retryCountRef.current[toolId] || 0) + 1
+        try {
+          ctx.timeout(() => {
+            const cur = activeRef.current
+            if (cur === toolId && store.isOpen() && typeof loadPanelRef.current === 'function') {
+              loadPanelRef.current(toolId, '', null)
+            }
+          }, 1200)
+        } catch (e) {}
       }
       // loadPanel 的最新引用：原生 change 监听只挂一次，经 ref 调用避免闭包捕获过期渲染帧
       const loadPanelRef = React.useRef(null)
@@ -1105,6 +1190,9 @@ return {
       async function refreshTools() {
         const list = await fetchTools(cwdRef.current)
         setTools(list)
+        // 空列表 = 框架启动期工具未注册/暂缺，不是「真的没有工具」：不纠正 active、清成 null。
+        // 否则抽屉打开前的挂载刷新会把 active 清掉并落盘，打开后出现无 tab 激活的假死态
+        if (!list.length) return
         // 无有效记忆时的默认 Tab：会话「流程」（用户指定）；没有 flow 才退到列表第一个。
         // 分类芯片必须同步切到目标工具的分类（flow 在「会话」），否则面板与 Tab 栏错位
         const cur = activeRef.current
@@ -1342,15 +1430,39 @@ return {
         return () => { try { disp() } catch (e) {} }
       }, [isOpen, active, curAutoMs])
 
-      // 激活 Tab 变化 → 切回该工具上次的面板并刷新
+      // 激活 Tab 变化 → 切回该工具上次的面板并刷新。
+      // isOpen 守卫：抽屉关闭时不预加载面板（页面加载早期 RPC 通道未就绪，
+      // 提前 loadPanel 会永久卡住 → 首次打开显示「加载面板…」；打开抽屉时
+      // isOpen 变化重新触发本 effect 正常加载）
       React.useEffect(() => {
+        if (!isOpen) return
         if (!active) { setHtml(null); return }
         // localStorage 记忆可能指向已停止的工具：tools 已加载且不含它时等 refreshTools 纠正，不闪错误
         if (tools.length && !tools.some((t) => t.id === active)) return
         setHtml(htmlRef.current[active] || null)
         loadPanel(active, '', null)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [active])
+      }, [active, isOpen])
+
+      // 初次加载不变量（v6.5.4）：上面的激活 effect 只响应 [active, isOpen]，框架启动窗口里
+      // tools 暂缺/暂空会让它 return 跳过，之后 active 不再变化就永远没人补加载（表现为
+      // 无 tab 激活 + 面板永久「加载面板…」，手动切 tab 才好）。这里按 tools 强制不变量：
+      // 抽屉开着且列表非空时，active 无效 → 兜底 flow/第一个（交给激活 effect 接管加载）；
+      // active 有效但从未发起过面板请求 → 补发一次（attemptedRef 去重，不循环）
+      React.useEffect(() => {
+        if (!isOpen || !tools.length) return
+        if (!active || !tools.some((t) => t.id === active)) {
+          const flow = tools.find((t) => t.id === 'flow')
+          const target = flow ? flow.id : tools[0].id
+          setCat(catOf(target))
+          setActive(target)
+          return
+        }
+        if (!attemptedRef.current[active] && typeof loadPanelRef.current === 'function') {
+          loadPanelRef.current(active, '', null)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [tools, isOpen])
 
       function onPanelClick(e) {
         if (!active) return

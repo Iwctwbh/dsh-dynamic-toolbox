@@ -6,7 +6,7 @@
 > **最快重建 = define+run 框架一个插件（2 次调用 + 1 次 GUI 批准），零点击。** 框架启动时自动补齐（`doRebuild`，幂等按插件 name 跳过本会话已定义的，含被开关停掉的）：读磁盘 `plugins.json` + `payload.json` 经 `dynamicCordisRunner` **并行** define+run，只补缺失（**实测全量冷重建 22 插件 ≈ 0.3s**，含耗时字段 `ms` 于自动补齐报告）；启动与否遵循**启停记忆**（见下）。sid 发现：`agents.currentInitiator()` 优先，兜底按 toolbox 条目 name 在 inventory 里匹配（多会话同名框架时跳过，不误补别的会话）。抽屉齿轮「从 plugins.json 重建/补齐」按钮仍可手动触发同一逻辑。
 > **启停记忆（配置文件）**：`<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json`（`{ plugins: { <条目id>: { enabled, at } } }`）。齿轮开关每次真停/真启自动落盘；重建时有记录且 `enabled=false` 的条目**只 define 不启动**（恢复上次记录），无记录条目按 `plugins.json` 的 `autoStart` 默认。可手改该文件预设下次重建的默认启停。
 > 无框架时的手动路径：读 `plugins.json` → 按 order 逐个取条目 `payload.json`（即完整 define 参数）→ `cordis_define` → autoStart 的 `cordis_run`。
-> **AI 手动重建后的持久化询问**（与 bootstrapper 首次询问同一套偏好）：AI 经模型工具完成重建后，先读 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`——`"auto":"never"` 则跳过询问；否则用 ask_user_question 问「要持久化自动重建吗」：**持久化**（跑 `host-bootstrap/install.ps1`，写 ~/.dsh 需沙箱批准，以后开会话自动重建、不用再找 AI）/ **仅本次** / **别再问**（写 `{"auto":"never"}` 落盘，bootstrapper 与后续 AI 重建共用这份偏好）。已装 bootstrapper 且偏好 always 时会话启动即已自举，不会走到手动重建这步。
+> **AI 手动重建后的持久化询问**（与 bootstrapper 共用同一份偏好）：AI 经模型工具完成重建后，先读 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`——`"auto":"never"` 则跳过询问；否则用 ask_user_question 问「要持久化自动重建吗」：**持久化**（跑 `host-bootstrap/install.ps1`，写 ~/.dsh 需沙箱批准，以后开会话自动重建、不用再找 AI）/ **仅本次** / **别再问**（写 `{"auto":"never"}` 落盘，bootstrapper 与后续 AI 重建共用这份偏好）。已装 bootstrapper 时会话启动即自举（每进程一次批准弹框），不会走到手动重建这步。
 > 写新工具插件 → 见 `PLUGIN-DEV.md`。
 
 ## 零模型调用自举（host-bootstrap，可选加速器）
@@ -29,13 +29,13 @@ pwsh <仓库根>\host-bootstrap\install.ps1     # 幂等，重复跑无副作用
 - **自举宿主会话（v6.2）**：define/run 归属一个固定宿主 id（`toolbox-host-<仓库路径哈希>`，每仓库一个、跨会话稳定）。宿主以「垫片 agent」注册进 `agents` 服务——满足 DSH 网关对 Remote 参数的 agent lookup（批准卡 / Cordis 面板按钮照常工作），而 runner 的完成/失败通知打到垫片的 no-op steer/inject → **用户会话零污染**（不再有 `Cordis run ... completed successfully` 通知）。宿主席位随进程重启消失，由 bootstrapper 在下次会话启动时重建
 - **工作区级单例（v6.1）**：同仓库已有运行中的框架实例（任意会话，检测 `toolboxRegistry.repoRoot()`）→ 本会话**跳过自举**（不弹卡、不 define+run）。`toolboxRegistry` 是进程级全局服务名，按会话重复挂载会撞名报错（`service "toolboxRegistry" has been registered`）——框架 Host 半自带附加模式兜底：检测到同仓库主实例时空转成功（不 provide/不自动补齐），异仓库时明确报错
 - **管理视图按仓库归属（v6.2）**：抽屉齿轮的插件清单/开关/重跑不再按会话过滤，改为「本仓库插件」——插件挂在宿主会话名下也不影响用户会话查看与操作；清单外插件（其他仓库）不可见
-- **首次询问**：第一次在某仓库触发时弹询问卡（自动重建并记住 / 仅本次 / 别再问），选择落盘 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`（`{"auto":"always"|"never"}`，gitignored）；**问不了（无 UI provider / 120s 超时）默认自举**，只有主动取消询问才跳过本轮。这份偏好与「AI 手动重建后的持久化询问」（见页首）共用：选「别再问」后两条路都不再问
+- **同意权（v6.4，无会话内询问）**：检测到仓库后直接 define+run，用户同意收敛到**每进程一次的批准弹框**（Client 半安全闸门，不归属任何会话——重启后并发恢复的多个同仓库会话不再各弹一卡）；进程级 single-flight 保证并发 session-start 只走一份自举流程，其余会话复用其结果。偏好文件 `.dsh-dynamic-toolbox/toolbox-bootstrap.json`（gitignored）仍生效：`{"auto":"never"}` → 完全不自举（与「AI 手动重建后的持久化询问」共用，见页首）
 - 只服务根会话：子代理/工作流子会话直接跳过（不会给每个 subagent 弹卡）
 - 幂等：本会话已定义同名框架插件（含被停掉的）→ 跳过；启停交给抽屉齿轮/Cordis 面板
 - 尊重启停记忆：`toolbox-plugins.json` 里 toolbox 记录为 `enabled=false` → 本轮不自举
 - define 的 sessionId 就是当前会话：插件会话归属、批准闸门与模型工具路径完全同构；bootstrapper 只是替你在会话启动时按了 cordis_define + cordis_run
-- 实现即仓库内 `host-bootstrap/`（约 160 行，只消费 dynamicCordisRunner/fs/agents/userQuestions/timer，不发布服务）；profile 里用 junction 指回仓库，代码随仓库版本管理
-- headless/无 GUI 会话：无法询问 → 默认自举，批准卡挂起无害（有页面接入后弹出）；不想被打扰写 `{"auto":"never"}` 或把 toolbox 启停记忆置 false
+- 实现即仓库内 `host-bootstrap/`（只消费 dynamicCordisRunner/fs/agents，不发布服务）；profile 里用 junction 指回仓库，代码随仓库版本管理
+- headless/无 GUI 会话：直接自举，批准卡挂起无害（有页面接入后弹出）；不想被打扰写 `{"auto":"never"}` 或把 toolbox 启停记忆置 false
 
 ### 配合：重建全程只剩一张批准卡
 

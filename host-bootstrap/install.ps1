@@ -148,7 +148,7 @@ if ($text -match [regex]::Escape("name: '$pkgName'")) {
 }
 
 if ($changed) {
-  Write-Host "`n安装完成。重启 DSH 进程后生效：任何模式下打开会话 → 首次弹询问卡 → 批准卡点一次允许 → 框架自动补齐全部插件。"
+  Write-Host "`n安装完成。重启 DSH 进程后生效：任何模式下打开会话 → 批准卡点一次允许 → 框架自动补齐全部插件。"
 } else {
   Write-Host "`n已是安装状态，无变更。（若尚未重启过 DSH，重启后自举生效）"
 }

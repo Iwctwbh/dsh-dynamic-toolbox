@@ -751,6 +751,32 @@ return {
       }
     })().catch((e) => { console.log('toolbox: 自动补齐异常: ' + String((e && e.message) || e)) })
 
+    // 会话信息查询（v6.5）：client 按当前会话 id 查 header.cwd。
+    // 抽屉主实例挂在宿主会话下，useSessions 视角的 byId 记录可能不可靠——
+    // cwd 以 Host 侧 sessions / sessionQuery 为准（client 每次切会话后调用）。
+    ctx.effect(() => harness.handle('toolbox/session-info', async (args) => {
+      const sid = args && typeof args.session === 'string' && args.session ? args.session : ''
+      if (!sid) return { ok: false, error: '缺少会话 id' }
+      const ss = ctx.get('sessions')
+      if (ss && typeof ss.get === 'function') {
+        try {
+          const s = ss.get(sid)
+          const cwd = s && s.header && typeof s.header.cwd === 'string' ? s.header.cwd : undefined
+          if (cwd) return { ok: true, cwd }
+        } catch (e) {}
+      }
+      const sq = ctx.get('sessionQuery')
+      if (sq && typeof sq.listSessions === 'function') {
+        try {
+          const list = await sq.listSessions()
+          const hit = (list || []).find((x) => x && x.id === sid)
+          const cwd = hit && hit.header && typeof hit.header.cwd === 'string' ? hit.header.cwd : undefined
+          if (cwd) return { ok: true, cwd }
+        } catch (e) {}
+      }
+      return { ok: false, error: '会话不存在或不可读: ' + sid }
+    }))
+
     ctx.effect(() => harness.handle('toolbox/panel', async (args) => {
       const root = await resolveRoot(args)
       return registry.panel(root, args)

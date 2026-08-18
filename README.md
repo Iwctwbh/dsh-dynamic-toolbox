@@ -89,7 +89,7 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 ```text
 1. pwsh host-bootstrap/install.ps1     # 幂等；卸载加 -Uninstall
 2. 重启 DSH
-3. 任何模式开新会话 → 首次弹「工具箱自举」询问卡（记住/仅本次/别再问）→ 批准卡点允许
+3. 任何模式开新会话 → 批准卡点一次允许（不归属任何会话；同仓库并发会话 single-flight 只弹一份）
    → 框架自动补齐全部 22 个插件（selfview 会再弹一张批准卡）
    （注册表按仓库分键：同一仓库已有框架实例时新会话跳过自举，直接共享；不同仓库各自自举并行共存）
 3. 多工作区并存：同一 DSH 进程内多个工作区可并行（抽屉跟随当前工作区切换，v6.3 multiplex）；

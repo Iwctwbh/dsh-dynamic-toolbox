@@ -2,7 +2,8 @@
 // ① apply 提供全局 toolboxRegistry（含 panel 方法，v6.3 契约）；
 // ② runner 缺 define/run/inventory 之一 → 会话启动时得到一次明确的版本/能力错误（warn）；
 // ③ runner 完整 + inventory 已有同名框架 → 幂等跳过（不重复 define）；
-// ④ runner 完整 + 空 inventory → define+run 走宿主垫片（宿主 id = toolbox-host-<root>）。
+// ④ runner 完整 + 空 inventory → define+run 走宿主垫片（宿主 id = toolbox-host-<root>）；
+// ⑤ hostIdOf 防碰撞：短前缀 + 全路径哈希（同前缀长路径 / a-b 与 a/b 不同 id）。
 // 每个用例重新 import 模块（?case=n 绕 ESM 缓存）：inflight/监听器是模块级状态。
 const fs = require('fs')
 const path = require('node:path')
@@ -113,8 +114,8 @@ const settle = () => new Promise((r) => setTimeout(r, 80))
   {
     const mod = await importFresh('idempotent')
     const calls = []
-    // 幂等按「本仓库宿主会话 id」匹配（与 index.js hostIdOf 同算法）
-    const hostId = 'toolbox-host-' + String(ROOT).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 48)
+    // 幂等按「本仓库宿主会话 id」匹配（直接用模块导出的 hostIdOf，与实现同源）
+    const hostId = mod.hostIdOf(ROOT)
     const runner = {
       define() { calls.push('define') },
       async run() { calls.push('run'); return { ok: true } },
@@ -146,6 +147,26 @@ const settle = () => new Promise((r) => setTimeout(r, 80))
       Boolean(ctx.provided.__entered) && /^toolbox-host-/.test(ctx.provided.__entered.id), ctx.provided.__entered ? ctx.provided.__entered.id : '(未 enter)')
     check('run 以 mode=run 发起', calls.some((c) => c[0] === 'run' && c[3] === 'run'))
     check('awaiting-approval 路径无告警', warns.length === 0, warns.join(' | '))
+  }
+
+  // ⑤ hostIdOf：短前缀 + 稳定路径哈希——同前缀长路径 / a-b 与 a/b 不再碰撞出同一宿主 id
+  {
+    const mod = await importFresh('hostid')
+    const org = 'D:/repos/very-long-organization-name'
+    const a = mod.hostIdOf(org + '/project-alpha')
+    const b = mod.hostIdOf(org + '/project-beta')
+    const c = mod.hostIdOf('D:/work/a-b')
+    const d = mod.hostIdOf('D:/work/a/b')
+    check('长共同前缀的不同项目宿主 id 不同', a !== b, a + ' vs ' + b)
+    check('a-b 与 a/b 宿主 id 不同', c !== d, c + ' vs ' + d)
+    check('同路径宿主 id 稳定', mod.hostIdOf(org + '/project-alpha') === a)
+    check('同一目录不同写法宿主 id 相同（分隔符/尾分隔符/大小写）',
+      mod.hostIdOf('D:/work/repo') === mod.hostIdOf('D:\\work\\repo\\')
+      && mod.hostIdOf('D:/work/repo') === mod.hostIdOf('d:/work/repo'),
+      mod.hostIdOf('D:/work/repo') + ' vs ' + mod.hostIdOf('D:\\work\\repo\\') + ' vs ' + mod.hostIdOf('d:/work/repo'))
+    check('Linux 路径大小写敏感（不折叠）', mod.hostIdOf('/srv/Repo') !== mod.hostIdOf('/srv/repo'))
+    check('宿主 id 仅字母数字与连字符', /^[a-z0-9-]+$/.test(a) && /^[a-z0-9-]+$/.test(c))
+    check('宿主 id 保留 toolbox-host- 前缀与可读短前缀', a.indexOf('toolbox-host-') === 0 && a.indexOf('project-alpha') > 0, a)
   }
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')

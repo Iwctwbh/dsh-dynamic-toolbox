@@ -52,7 +52,7 @@ const ctx = {
     if (name === 'agents') return agents
     if (name === 'fs') return fsStub
     if (name === 'sandboxPolicy') return { workspaceRoot: 'W' }
-    if (name === 'sessions') return { list: () => [{ header: { cwd: 'W' } }] }
+    if (name === 'sessions') return { get: (id) => (id === 's1' ? { header: { id: 's1', cwd: 'W' } } : undefined), list: () => [{ header: { cwd: 'W' } }] }
     return undefined
   },
   provide(name, value) { provided[name] = value },

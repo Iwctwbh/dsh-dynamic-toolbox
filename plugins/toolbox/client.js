@@ -53,12 +53,14 @@ return {
     // 触发按钮的 running 计数：官方行带 data-cordis-row=<pluginId> / data-cordis-awaiting 稳定钩子，
     // 触发按钮带 data-cordis-badge。host-only 集合经 toolbox/plugins 计算（Host 半已有 inventory），
     // MutationObserver 幂等打标隐藏（跳过待审批行）；计数 span 用 data-tb-count + CSS ::after
-    // 覆盖——不与 React 文本节点打架。开关与管理视图共用、localStorage 持久化，默认开。
+    // 覆盖——不与 React 文本节点打架。running 计数直接统计面板 DOM 里「可见且 running」的行：
+    // 官方 badge 统计整个进程的动态插件，toolbox/plugins 只有当前工具箱的单仓库清单，
+    // 用它计算会偏小；面板未打开时行不渲染，官方文本本就是正确的全局值，不覆盖。
+    // 开关与管理视图共用、localStorage 持久化，默认开。
     const PANEL_HIDE_KEY = 'tbx-hide-host-only'
     const panelHide = {
       on: (() => { try { return localStorage.getItem(PANEL_HIDE_KEY) !== '0' } catch (e) { return true } })(),
       headless: new Set(),
-      visibleRunning: 0,
     }
     styles.insert([
       'li[data-cordis-row][data-tb-hide]{display:none!important}',
@@ -68,7 +70,8 @@ return {
     ].join(''))
     function applyPanelHide() {
       if (typeof document === 'undefined' || !document.body) return
-      for (const li of document.querySelectorAll('li[data-cordis-row]')) {
+      const rows = document.querySelectorAll('li[data-cordis-row]')
+      for (const li of rows) {
         const hide = panelHide.on && panelHide.headless.has(li.getAttribute('data-cordis-row')) && !li.hasAttribute('data-cordis-awaiting')
         if (hide) { if (!li.hasAttribute('data-tb-hide')) li.setAttribute('data-tb-hide', '') }
         else if (li.hasAttribute('data-tb-hide')) li.removeAttribute('data-tb-hide')
@@ -82,11 +85,23 @@ return {
         else if (sec.hasAttribute('data-tb-hide')) sec.removeAttribute('data-tb-hide')
       }
       const badge = document.querySelector('button[data-cordis-badge]')
-      if (badge) for (const sp of badge.querySelectorAll('span')) {
-        if (!/^\s*\d+\s+running\s*$/.test(sp.textContent || '')) continue
-        const txt = panelHide.visibleRunning + ' running'
-        if (panelHide.on) { if (sp.getAttribute('data-tb-count') !== txt) sp.setAttribute('data-tb-count', txt) }
-        else if (sp.hasAttribute('data-tb-count')) sp.removeAttribute('data-tb-count')
+      if (!badge) return
+      // running 计数直接统计面板 DOM 里「可见且 running」的行（官方 badge 是全进程口径，
+      // toolbox/plugins 只有单仓库清单，用它计算会偏小）；面板未打开时行不渲染 → 不覆盖，
+      // 保持官方全局计数
+      let visibleRunning = null
+      if (rows.length) {
+        visibleRunning = 0
+        for (const li of rows) {
+          if (!li.hasAttribute('data-tb-hide') && li.getAttribute('data-cordis-status') === 'running') visibleRunning++
+        }
+      }
+      for (const sp of badge.querySelectorAll('span')) {
+        if (!/^\s*\d+\s+running\s*$/.test(sp.textContent || '') && !sp.hasAttribute('data-tb-count')) continue
+        if (panelHide.on && visibleRunning !== null) {
+          const txt = visibleRunning + ' running'
+          if (sp.getAttribute('data-tb-count') !== txt) sp.setAttribute('data-tb-count', txt)
+        } else if (sp.hasAttribute('data-tb-count')) sp.removeAttribute('data-tb-count')
       }
     }
     let panelHideRaf = 0
@@ -99,7 +114,6 @@ return {
         const r = await host.call('toolbox/plugins', {})
         if (!r || !r.ok || !Array.isArray(r.plugins)) return
         panelHide.headless = new Set(r.plugins.filter((p) => !p.hasClientHalf).map((p) => p.pluginId))
-        panelHide.visibleRunning = r.plugins.filter((p) => p.hasClientHalf && p.running).length
         applyPanelHide()
       } catch (e) {}
     }
@@ -1653,6 +1667,12 @@ return {
           seqRef.current = {}
         }
         if (cwdChanged) {
+          // 同时清上一工作区的在屏 HTML 与逐工具请求标记：经过无工具箱的工作区后延迟重载
+          // 会因旧空列表跳过，新工具列表到达时 attemptedRef 又挡住补发，面板将一直残留
+          // 上一工作区的缓存 HTML（retryCount 一并重置，失败重试额度不被旧工作区消耗）
+          attemptedRef.current = {}
+          retryCountRef.current = {}
+          setHtml(null)
           refreshTools()
         }
         // 面板重载延后一拍：等 refreshTools 的 setTools/active 纠正落地（新仓库无同名工具时

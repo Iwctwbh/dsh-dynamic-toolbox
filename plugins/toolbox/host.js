@@ -165,6 +165,7 @@ return {
     // 普通工具、面板与启动路径保持可用。
     const canStopFromPanel = Boolean(runner && typeof runner.stopFromPanel === 'function')
     const agents = ctx.get('agents')
+    const sessionsSvc = ctx.get('sessions')
     const sessionOf = (args) => (args && typeof args.session === 'string' && args.session) ? args.session : undefined
 
     // agent 解析：live agent 优先；宿主会话/幽灵 id 等非 live 会话兜底为最小 agent
@@ -172,9 +173,29 @@ return {
     // 自举宿主会话模式下主实例归属「宿主会话 id」，此兜底让抽屉的管理 RPC 也能驱动它。
     const agentFor = (sid) => sid ? ((agents && agents.get(sid)) || { id: sid }) : undefined
 
-    // 宿主会话 id（与 host-bootstrap/index.js hostIdOf 同算法）：唯一标识一个仓库根，
-    // 用于自动补齐时把「本框架」与其宿主会话行对上（多仓库并存不误认别的框架行）
-    const hostIdOf = (root) => 'toolbox-host-' + String(root || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 48)
+    // 宿主会话 id（与 host-bootstrap/index.js hostIdOf 同算法，两处必须同步）：唯一标识一个仓库根，
+    // 用于自动补齐时把「本框架」与其宿主会话行对上（多仓库并存不误认别的框架行）。
+    // canonical path（统一分隔符/去尾/Windows 折叠大小写）后取规范化短前缀 + FNV-1a 哈希——
+    // 只截断会让同前缀长路径撞出同一 id；不规范化会让同一目录的不同写法算出不同 owner。
+    const pathHash = (s) => {
+      let h = 0x811c9dc5
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i)
+        h = Math.imul(h, 0x01000193) >>> 0
+      }
+      return h.toString(36)
+    }
+    const canonicalRoot = (root) => {
+      let s = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      if (/^[a-zA-Z]:/.test(s) || s.indexOf('//') === 0) s = s.toLowerCase()
+      return s
+    }
+    const hostIdOf = (root) => {
+      const canon = canonicalRoot(root)
+      const norm = canon.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+      const prefix = norm.slice(-24)
+      return 'toolbox-host-' + (prefix ? prefix + '-' : '') + pathHash(canon)
+    }
 
     // 清单映射（按 root 缓存）：root → { name → { entryId, defaultStart } }。
     // 惰性函数：body 引用 readConfig（定义在其后），调用时已初始化。
@@ -201,15 +222,48 @@ return {
       return out
     }
 
-    // 行是否属于本仓库：行名命中 plugins.json 清单 → 属于；清单读失败（空映射）时回退按会话过滤。
-    // 管理视图从「本会话插件」改为「本仓库插件」（工作区级单例 + 自举宿主会话后，插件可能挂在
-    // 宿主会话名下，不能再按 agentId 过滤——否则用户会话的管理页永远空白）。
-    const isRepoRow = (row, byName, sid) => {
+    // 行是否属于本仓库：清单名命中只是必要条件——不同 clone 的 Package name 完全相同，
+    // 只按名过滤会把仓库 B 的行吸进仓库 A 的管理页（批量启停跨仓库执行、启停记忆写错仓库）。
+    // owner 校验：bootstrap 行的 owner 是本仓库宿主会话（hostIdOf(root) 精确匹配）；手动定义
+    // 的旧行（owner 为真实会话）按 owner 会话 cwd 是否包含本仓库 root 判定；owner 无从查证
+    // → 不属于。清单读失败（空映射）时退回按调用方会话过滤（原降级路径）。
+    const isRepoRow = (row, byName, root, sid) => {
       const current = row.packages.find((p) => p.packageId === (row.currentPackageId || row.nextPackageId))
         || row.packages[row.packages.length - 1]
       const name = (current && current.name) || row.pluginId
-      if (byName && Object.keys(byName).length > 0) return byName[name] !== undefined
+      if (byName && Object.keys(byName).length > 0) {
+        if (byName[name] === undefined) return false
+        if (root) {
+          if (row.agentId === hostIdOf(root)) return true
+          const ownerCwd = sessionCwdOf(row.agentId)
+          return ownerCwd ? ownsRoot(ownerCwd, root) : false
+        }
+        return !sid || row.agentId === sid
+      }
       return !sid || row.agentId === sid
+    }
+
+    // owner 会话的 cwd（手动定义行的归属判定用；宿主垫片不在 sessions 服务里，返回 undefined）
+    const sessionCwdOf = (sid) => {
+      if (!sid || !sessionsSvc || typeof sessionsSvc.get !== 'function') return undefined
+      try {
+        const s = sessionsSvc.get(sid)
+        const c = s && s.header && typeof s.header.cwd === 'string' ? s.header.cwd : undefined
+        return c || undefined
+      } catch (e) { return undefined }
+    }
+
+    // owner 归属：owner 会话工作区包含本仓库 root（findRepo 只在 cwd 直下与一级子目录探测，
+    // 故 root === cwd 或 root = cwd/<子目录>）。比较前统一分隔符/尾分隔符，Windows 路径折叠大小写。
+    const ownsRoot = (cwd, root) => {
+      let c = String(cwd || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      let r = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      if (!c || !r) return false
+      if (/^[a-zA-Z]:/.test(c) || /^[a-zA-Z]:/.test(r) || c.indexOf('//') === 0 || r.indexOf('//') === 0) {
+        c = c.toLowerCase()
+        r = r.toLowerCase()
+      }
+      return r === c || r.indexOf(c + '/') === 0
     }
 
     // 当前仓库的动态插件清单（inventory 是全进程的，按「清单归属」过滤为当前仓库的行；
@@ -223,7 +277,7 @@ return {
       const rows = []
       const byName = await manifestMap(root)
       for (const r of runner.inventory()) {
-        if (!isRepoRow(r, byName, sid)) continue
+        if (!isRepoRow(r, byName, root, sid)) continue
         const current = r.packages.find((p) => p.packageId === (r.currentPackageId || r.nextPackageId))
           || r.packages[r.packages.length - 1]
         const name = (current && current.name) || r.pluginId
@@ -259,7 +313,7 @@ return {
       if (!pluginId) return { ok: false, error: '缺少 pluginId' }
       const byName = await manifestMap(root)
       const row = runner.inventory().find((r) => r.pluginId === pluginId)
-      if (!row || !isRepoRow(row, byName, sid)) return { ok: false, error: '插件不存在或不属于当前仓库: ' + pluginId }
+      if (!row || !isRepoRow(row, byName, root, sid)) return { ok: false, error: '插件不存在或不属于当前仓库: ' + pluginId }
       if (row.packages.some((p) => p.hasClientHalf)) {
         return { ok: false, error: pluginId + ' 含 Client 半，启停请到 Cordis 面板操作' }
       }
@@ -372,7 +426,7 @@ return {
       if (!pluginId) return { ok: false, error: '缺少 pluginId' }
       const byName = await manifestMap(root)
       const row = runner.inventory().find((r) => r.pluginId === pluginId)
-      if (!row || !isRepoRow(row, byName, sid)) return { ok: false, error: '插件不存在或不属于当前仓库: ' + pluginId }
+      if (!row || !isRepoRow(row, byName, root, sid)) return { ok: false, error: '插件不存在或不属于当前仓库: ' + pluginId }
       if (row.packages.some((p) => p.hasClientHalf)) {
         return { ok: false, error: pluginId + ' 含 Client 半，重跑请到 Cordis 面板操作' }
       }
@@ -409,7 +463,7 @@ return {
       const failed = []
       const skippedClient = []
       for (const r of runner.inventory()) {
-        if (!isRepoRow(r, entryIdByName, sid)) continue
+        if (!isRepoRow(r, entryIdByName, root, sid)) continue
         if (r.packages.some((p) => p.hasClientHalf)) { skippedClient.push(r.pluginId); continue }
         const current = r.packages.find((p) => p.packageId === (r.currentPackageId || r.nextPackageId))
           || r.packages[r.packages.length - 1]
@@ -457,7 +511,7 @@ return {
       const failed = []
       const skippedClient = []
       for (const r of runner.inventory()) {
-        if (!isRepoRow(r, byName, sid)) continue
+        if (!isRepoRow(r, byName, root, sid)) continue
         if (r.packages.some((p) => p.hasClientHalf)) { skippedClient.push(r.pluginId); continue }
         if (!r.activeRun) continue // 只重跑运行中的
         const pkg = pkgOf(r)
@@ -738,7 +792,7 @@ return {
         const reattachByName = await manifestMap(myRoot)
         for (const r of runner.inventory()) {
           if (stopped) break // M2：框架停止中立即中断重挂
-          if (!isRepoRow(r, reattachByName, sid)) continue
+          if (!isRepoRow(r, reattachByName, myRoot, sid)) continue
           if (!r.activeRun) continue
           const hasClient = r.packages.some((p) => p.hasClientHalf)
           if (selfPluginIds.has(r.pluginId)) continue // 框架自身绝不重挂（防重启循环）

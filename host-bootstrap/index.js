@@ -206,9 +206,35 @@ async function bootstrapOnce(ctx, agent, runner, fs, root) {
   }
 }
 
-// 每仓库一个稳定宿主会话 id（进程内唯一；仅字母数字与连字符，避免非 ASCII/分隔符问题）
-function hostIdOf(root) {
-  return 'toolbox-host-' + String(root).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 48)
+// 生成宿主 id 前先规范化仓库路径：统一分隔符、去尾分隔符；Windows 盘符/UNC 路径的
+// 文件系统大小写不敏感，一并折叠——同一目录的不同合法写法（D:/work/repo 与
+// D:\work\repo\ 与 d:/work/repo）必须得到同一宿主 id，否则 bootstrap 与框架 Host
+// 对同一仓库算出不同 owner，破坏幂等检查与自动重挂。与 plugins/toolbox/host.js 同算法。
+function canonicalRoot(root) {
+  let s = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (/^[a-zA-Z]:/.test(s) || s.indexOf('//') === 0) s = s.toLowerCase()
+  return s
+}
+
+// 每仓库一个稳定宿主会话 id（进程内唯一；仅字母数字与连字符，避免非 ASCII/分隔符问题）：
+// 规范化短前缀（可读）+ canonical path 的 FNV-1a 哈希（防碰撞）。只截断 48 字符会让同前缀
+// 长路径（…/org/project-alpha 与 …/org/project-beta）或 a-b 与 a/b 归一后同形 —— 第二仓库
+// 复用第一仓库的垫片 agent，被同名 Package 幂等误判，无法自举。与 plugins/toolbox/host.js 同算法。
+export function hostIdOf(root) {
+  const canon = canonicalRoot(root)
+  const norm = canon.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const prefix = norm.slice(-24)
+  return 'toolbox-host-' + (prefix ? prefix + '-' : '') + pathHash(canon)
+}
+
+// FNV-1a 32-bit：纯 JS 无 crypto 依赖，跨引擎结果稳定；base36 ≤ 7 字符
+function pathHash(s) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
 }
 
 // 宿主垫片 agent：进入 agents 服务（不产生真实会话/不触发 agent/session-start）。

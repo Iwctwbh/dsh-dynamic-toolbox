@@ -1,6 +1,7 @@
 // flow 工具仿真：mock sessionQuery（主会话 + 子代理会话）+ sessions（live 判定）。
 // 断言：主干流程节点顺序与箭头、平行卡片分组（同 step 多调用）、子代理 git 树分支
-// （├─/│/╰─ + 子会话步骤展开 + live 徽章）、自动刷新声明、live 开关、事件配对状态色。
+// （├─/│/╰─ + 子会话步骤展开 + live 徽章）、自动刷新声明、live 开关、事件配对状态色、
+// 流式失败落定（chunk 后无最终 message → 中断标记、计时停止）。
 const fs = require('fs')
 const path = require('path')
 const ROOT = path.resolve(__dirname, '..')
@@ -25,11 +26,27 @@ const CHILD_EVENTS = [
   { seq: 2, time: 1520, type: 'tool/call', data: { turn: 1, step: 1, name: 'grep', callId: 'x1', arguments: '{"pattern":"bar"}' } },
   { seq: 3, time: 1560, type: 'tool/result', data: { message: { content: [{ type: 'tool-result', toolCallId: 'x1', content: [{ type: 'text', text: 'child hits' }] }] } } },
 ]
+// ---- 流式失败会话样本：已产生 chunk，随后请求失败（step/end + turn/end error，无最终 message）----
+const FAIL_EVENTS = [
+  { seq: 1, time: 2000, type: 'turn/start', data: { turn: 1 } },
+  { seq: 2, time: 2010, type: 'step/start', data: { turn: 1, step: 1 } },
+  { seq: 3, time: 2020, type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', text: 'partial content' } } },
+  { seq: 4, time: 2100, type: 'step/end', data: { turn: 1, step: 1 } },
+  { seq: 5, time: 2110, type: 'turn/end', data: { turn: 1, reason: { kind: 'error', error: { message: 'boom', code: 'X' } } } },
+]
+// ---- 对照样本：流式进行中（无 step/end）----
+const LIVE_EVENTS = [
+  { seq: 1, time: 3000, type: 'turn/start', data: { turn: 1 } },
+  { seq: 2, time: 3010, type: 'step/start', data: { turn: 1, step: 1 } },
+  { seq: 3, time: 3020, type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', text: 'still going' } } },
+]
 
 const sessionQuery = {
   async readSession(sid) {
     if (sid === 's-main') return { session: { id: 's-main' }, events: MAIN_EVENTS }
     if (sid === '228a8697-2b7a-422a-b3c0-1cf61c965d5c') return { session: { id: sid }, events: CHILD_EVENTS }
+    if (sid === 's-fail') return { session: { id: sid }, events: FAIL_EVENTS }
+    if (sid === 's-live') return { session: { id: sid }, events: LIVE_EVENTS }
     return { session: { id: sid }, events: [] }
   },
   async listSessions() { return [{ header: { id: 's-main' }, live: true }] },
@@ -105,6 +122,19 @@ const check = (label, cond, detail) => {
   // 静默刷新动作（__refresh 不报错）
   r = await h({ action: '__refresh', fields: {}, state: r.state, root: ROOT, session: 's-main' })
   check('__refresh → 正常渲染', r.ok === true && r.html.indexOf('实时流程') >= 0)
+
+  // 流式请求失败（已产生 chunk 但无最终 message）：草稿落定为中断，卡片与计时器停止运行态
+  r = await h({ action: '', fields: {}, state: null, root: ROOT, session: 's-fail' })
+  check('流式失败 → 中断标记', r.html.indexOf('（生成已中断）') >= 0)
+  check('流式失败 → 已生成片段保留', r.html.indexOf('partial content') >= 0)
+  check('流式失败 → 耗时落定（静态 ⏱）', r.html.indexOf('⏱') >= 0)
+  check('流式失败 → 无运行中计时器', r.html.indexOf('data-flow-timer') < 0)
+  check('流式失败 → 无流光脉冲', r.html.indexOf('fl-live') < 0)
+
+  // 对照：流式进行中（无 step/end）→ 保持生成态与运行计时
+  r = await h({ action: '', fields: {}, state: null, root: ROOT, session: 's-live' })
+  check('流式中 → 片段实时展示', r.html.indexOf('still going') >= 0)
+  check('流式中 → 运行中计时器', r.html.indexOf('data-flow-timer') >= 0)
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')
   process.exit(failures ? 1 : 0)

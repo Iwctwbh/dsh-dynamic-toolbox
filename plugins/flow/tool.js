@@ -87,6 +87,8 @@ return {
       const byCallId = {}
       const streamingAi = {} // turn:step → 首个 chunk 建立的临时助手卡；最终 message 原位落定，保持卡片 key 稳定
       const stepStarts = {} // turn:step → step/start 时间；助手运行计时从请求步骤开始，而不是首个 token 才开始
+      const stepEnds = {} // turn:step → step/end 时间；无最终 message 的草稿据此落定（请求失败/中断）
+      const turnEnds = {} // turn → turn/end 时间；step/end 缺失时的兜底落定依据
       let route = '' // 最近 request/header 的 provider/model，贴给后续助手消息卡
       let curTurn = null // 最近 turn/start 的轮次：user/message 不带 turn，用它推算归属
       for (const ev of events) {
@@ -97,6 +99,16 @@ return {
           const turn = typeof d.turn === 'number' ? d.turn : curTurn
           const step = typeof d.step === 'number' ? d.step : 0
           stepStarts[String(turn) + ':' + step] = ev.time
+          continue
+        }
+        if (ev.type === 'step/end') {
+          const turn = typeof d.turn === 'number' ? d.turn : curTurn
+          const step = typeof d.step === 'number' ? d.step : 0
+          stepEnds[String(turn) + ':' + step] = ev.time
+          continue
+        }
+        if (ev.type === 'turn/end') {
+          if (typeof d.turn === 'number') turnEnds[d.turn] = ev.time
           continue
         }
         if (ev.type === 'request/header') {
@@ -189,7 +201,19 @@ return {
         const text = Array.isArray(it.chunks) ? it.chunks.join('') : ''
         const reasoning = Array.isArray(it.reasoningChunks) ? it.reasoningChunks.join('') : ''
         it.full = text || reasoning
-        it.preview = oneLine(it.full, 110) || (it.hasToolCallChunk ? '正在准备工具调用…' : (reasoning ? '思考中…' : '正在生成…'))
+        const key = String(it.turn) + ':' + it.step
+        const endedAt = stepEnds[key] != null ? stepEnds[key]
+          : (it.turn != null && turnEnds[it.turn] != null ? turnEnds[it.turn] : null)
+        if (endedAt != null) {
+          // 步骤/轮次已终结却始终没有最终 message → 模型请求失败/中断：
+          // 落定卡片（停止流光脉冲与耗时计时），标记中断并保留已生成片段
+          it.streaming = false
+          it.interrupted = true
+          it.runDur = Math.max(0, endedAt - it.runStart)
+          it.preview = (it.full ? oneLine(it.full, 100) + ' ' : '') + '（生成已中断）'
+        } else {
+          it.preview = oneLine(it.full, 110) || (it.hasToolCallChunk ? '正在准备工具调用…' : (reasoning ? '思考中…' : '正在生成…'))
+        }
         delete it.chunks
         delete it.reasoningChunks
         delete it.hasToolCallChunk
@@ -340,7 +364,7 @@ return {
         (fmtTime(it.time) ? '<span class="fl-time">' + fmtTime(it.time) + '</span>' : '') +
         (aiRunning && it.runStart ? '<span class="fl-time" data-flow-timer="' + it.runStart + '" data-flow-timer-prefix="⏱ ">⏱ 0ms</span>' : (isAi && it.runDur != null ? '<span class="fl-time">⏱ ' + fmtDur(it.runDur) + '</span>' : '')) +
         (it.tok ? '<span class="fl-time">+' + it.tok + ' tok</span>' : '') + '</div>' +
-        '<div class="fl-preview">' + esc(it.preview || '（空）') + '</div>' +
+        '<div class="fl-preview"' + (it.interrupted ? ' style="color:var(--tb-danger-text,#f28b82)"' : '') + '>' + esc(it.preview || '（空）') + '</div>' +
       '</div>'
     }
 
@@ -448,7 +472,7 @@ return {
           sessionLive = !!(agent && agent.status === 'running')
         }
       } catch (e) {}
-      const liveAiSeq = (hasAgentStatus ? sessionLive : active) && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' ? lastIt.seq : null
+      const liveAiSeq = (hasAgentStatus ? sessionLive : active) && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' && !lastIt.interrupted ? lastIt.seq : null
       const CAP = 60
       const shown = nodes.slice(-CAP)
       const parts = []

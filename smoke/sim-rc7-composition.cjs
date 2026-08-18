@@ -107,7 +107,7 @@ function findDshRoot() {
   root.provide('agents', agentsStub)
   root.provide('fs', fsStub)
   root.provide('sandboxPolicy', { workspaceRoot: ROOT })
-  root.provide('sessions', { list: () => [] })
+  root.provide('sessions', { get: (id) => (id === AGENT_ID ? agent.session : undefined), list: () => [] })
   root.provide('subprocess', subprocessStub)
   // 其余工具 inject 的服务：只需存在（fiber 激活），面板动作不在本套件触发
   for (const name of ['credentials', 'sessionQuery', 'systemPrompt', 'tokenMeter', 'llm', 'agentDefaultModel']) {

@@ -1,12 +1,38 @@
 // toolbox host.js 仿真（v6.3 multiplex）：mock dynamicCordisRunner/agents/fs/harness，验证：
 // ①两次 apply（两个仓库框架）→ 第一份 provide 全局注册表，第二份复用；myRoot 仲裁各占一个仓库；
 // ②tools/panel 按 root 路由（不同 root 各自表，跨 root 调未注册工具报错）；
-// ③管理 RPC 按仓库归属过滤（isRepoRow 清单命中）且按 cwd/root 解析目标仓库；
-// ④build 上下文（beginBuild/endBuild）把注册归入指定 root；agentFor 兜底非 live 会话。
+// ③管理 RPC 按仓库归属过滤（isRepoRow 清单命中 + owner 校验）且按 cwd/root 解析目标仓库；
+// ④build 上下文（beginBuild/endBuild）把注册归入指定 root；agentFor 兜底非 live 会话；
+// ⑤双仓库同 Package name 隔离（W3 = W 的另一份 clone）：清单同名也不串行，跨仓库操作被拒，
+//   启停记忆各写各的仓库。
 const fs = require('fs')
 const path = require('path')
 const ROOT = path.resolve(__dirname, '..')
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8')
+
+// hostIdOf 同算法（plugins/toolbox/host.js 与 host-bootstrap/index.js 同源）：
+// 仿真里为 fixture 行生成真实的 bootstrap 宿主 owner id
+const pathHash = (s) => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
+}
+const canonicalRoot = (root) => {
+  let s = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (/^[a-zA-Z]:/.test(s) || s.indexOf('//') === 0) s = s.toLowerCase()
+  return s
+}
+const hostIdOf = (root) => {
+  const canon = canonicalRoot(root)
+  const norm = canon.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const prefix = norm.slice(-24)
+  return 'toolbox-host-' + (prefix ? prefix + '-' : '') + pathHash(canon)
+}
+const HOST_W2 = hostIdOf('W2')
+const HOST_W3 = hostIdOf('W3')
 
 const rpc = {}
 const harness = { handle(name, fn) { rpc[name] = fn } }
@@ -28,9 +54,9 @@ const MANIFEST_W2 = JSON.stringify({
     { id: 'g2', name: 'G2', autoStart: true },
   ],
 })
-const manifestOf = (root) => (root === 'W2' ? MANIFEST_W2 : MANIFEST_W)
-// 真实形态：W 根无 plugins.json（仓库在子目录 W/repo，clone 部署）；W2 根即仓库
-const REPO_FILES = new Set(['W/repo/plugins.json', 'W2/plugins.json'])
+const manifestOf = (root) => (root === 'W2' ? MANIFEST_W2 : MANIFEST_W) // W3 是 W 的另一份 clone：清单与 W 完全同名
+// 真实形态：W 根无 plugins.json（仓库在子目录 W/repo，clone 部署）；W2 根即仓库；W3 = W 的 clone
+const REPO_FILES = new Set(['W/repo/plugins.json', 'W2/plugins.json', 'W3/plugins.json'])
 // 状态化落盘：writeConfig 经 subprocess `node -e` 写文件 → 这里截获 argv，readText/stat 可见
 const writtenFiles = new Map()
 const fsStub = {
@@ -56,9 +82,11 @@ const runner = {
       { pluginId: 'p1', agentId: 's1', activeRun: { pluginRunId: 'r1' }, packages: [{ packageId: 'k1', name: 'A', hasClientHalf: false }], currentPackageId: 'k1' },
       { pluginId: 'p2', agentId: 's1', activeRun: null, packages: [{ packageId: 'k2', name: 'B', hasClientHalf: false }], currentPackageId: 'k2' },
       { pluginId: 'p3', agentId: 's1', activeRun: { pluginRunId: 'r3' }, packages: [{ packageId: 'k3', name: 'C', hasClientHalf: true }], currentPackageId: 'k3' }, // 不在清单（其他仓库）
-      { pluginId: 'p4', agentId: 'toolbox-host-W2', activeRun: { pluginRunId: 'r4' }, packages: [{ packageId: 'k4', name: 'G2', hasClientHalf: false }], currentPackageId: 'k4' }, // 仓库 W2
+      { pluginId: 'p4', agentId: HOST_W2, activeRun: { pluginRunId: 'r4' }, packages: [{ packageId: 'k4', name: 'G2', hasClientHalf: false }], currentPackageId: 'k4' }, // 仓库 W2（bootstrap 宿主行）
       { pluginId: 'p5', agentId: 's1', activeRun: { pluginRunId: 'r5' }, packages: [{ packageId: 'k5', name: 'E', hasClientHalf: false }], currentPackageId: 'k5' }, // run 失败
       { pluginId: 'p6', agentId: 's1', activeRun: null, packages: [{ packageId: 'k6', name: 'F', hasClientHalf: false }] }, // 被抑制：只 define 未 run，指针皆空
+      { pluginId: 'p7', agentId: HOST_W3, activeRun: { pluginRunId: 'r7' }, packages: [{ packageId: 'k7', name: 'A', hasClientHalf: false }], currentPackageId: 'k7' }, // 仓库 W3（与 W 的 A 同名）
+      { pluginId: 'p8', agentId: HOST_W3, activeRun: null, packages: [{ packageId: 'k8', name: 'B', hasClientHalf: false }], currentPackageId: 'k8' }, // 仓库 W3（与 W 的 B 同名）
     ]
   },
   async run(agent, pluginId, pkg, mode) {
@@ -78,6 +106,7 @@ const agents = {
 // ctx：提供动态注册表跨 apply 共享（第一次 provide 存起来，第二次 get 到同一实例）
 const provided = {}
 const sessionsStub = {
+  get: (id) => (id === 's1' ? { header: { id: 's1', cwd: 'W' } } : undefined),
   list: () => [
     { header: { cwd: 'W' } },
     { header: { cwd: 'W2' } },
@@ -161,7 +190,7 @@ const check = (label, cond, detail) => {
 
   // —— 管理 RPC：toolbox/plugins 按 cwd 解析 root → 对应仓库的清单行 ——
   const plW = await rpc['toolbox/plugins']({ cwd: 'W' })
-  check('plugins(cwd=W) 列 W 仓库行（p1/p2/p5/p6）且不含 W2 行', plW.ok === true && JSON.stringify(plW.plugins.map((x) => x.pluginId)) === JSON.stringify(['p1', 'p2', 'p5', 'p6']), JSON.stringify(plW.plugins.map((x) => x.pluginId)))
+  check('plugins(cwd=W) 列 W 仓库行（p1/p2/p5/p6），不含 W2 行与 W3 同名行', plW.ok === true && JSON.stringify(plW.plugins.map((x) => x.pluginId)) === JSON.stringify(['p1', 'p2', 'p5', 'p6']), JSON.stringify(plW.plugins.map((x) => x.pluginId)))
   const plW2 = await rpc['toolbox/plugins']({ cwd: 'W2' })
   check('plugins(cwd=W2) 列 W2 仓库行（p4）', plW2.ok === true && JSON.stringify(plW2.plugins.map((x) => x.pluginId)) === JSON.stringify(['p4']), JSON.stringify(plW2.plugins.map((x) => x.pluginId)))
 
@@ -194,6 +223,26 @@ const check = (label, cond, detail) => {
   check('plugin-set-default 写盘成功', rSet.ok === true, JSON.stringify(rSet))
   const pl2 = await rpc['toolbox/plugins']({ cwd: 'W', session: 's1' })
   check('set-default 后「重启后」pill 值立即翻转（A=false）', findRow(pl2, 'p1').defaultStart === false, JSON.stringify(findRow(pl2, 'p1')))
+
+  // —— 双仓库同 Package name 隔离（评审回归）：W3 = W 的另一份 clone，清单名完全相同 ——
+  const plW3 = await rpc['toolbox/plugins']({ cwd: 'W3' })
+  check('plugins(cwd=W3) 只列 W3 行（p7/p8），不串入 W 的同名行',
+    plW3.ok === true && JSON.stringify(plW3.plugins.map((x) => x.pluginId)) === JSON.stringify(['p7', 'p8']), JSON.stringify(plW3.plugins.map((x) => x.pluginId)))
+  check('plugins(cwd=W) 排除异仓库同名行（owner 校验生效）',
+    !plW.plugins.some((x) => x.pluginId === 'p7' || x.pluginId === 'p8'))
+
+  const rCrossRepo = await rpc['toolbox/plugin-toggle']({ cwd: 'W', session: 's1', pluginId: 'p7', enable: false })
+  check('跨仓库操作被拒（W 的管理动不了 W3 的 p7）', rCrossRepo.ok === false && /不属于当前仓库/.test(rCrossRepo.error), rCrossRepo.error)
+
+  calls.length = 0
+  const rAllW = await rpc['toolbox/plugin-toggle-all']({ cwd: 'W', session: 's1', enable: false })
+  check('toggle-all(cwd=W) 不触碰 W3 同名行（p7/p8）', rAllW.ok === true && !calls.some((c) => c[2] === 'p7' || c[2] === 'p8'), JSON.stringify(calls))
+
+  calls.length = 0
+  const rT8 = await rpc['toolbox/plugin-toggle']({ cwd: 'W3', session: 's1', pluginId: 'p8', enable: true })
+  check('W3 行 toggle 启动成功', rT8.ok === true && rT8.running === true, JSON.stringify(rT8))
+  check('W3 行操作用其 owner 会话 agent', calls.some((c) => c[0] === 'run' && c[1] === HOST_W3 && c[2] === 'p8'), JSON.stringify(calls))
+  check('启停记忆写入 W3 而非 W', writtenFiles.has('W3/.dsh-dynamic-toolbox/toolbox-plugins.json'), [...writtenFiles.keys()].join(' | '))
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')
   process.exit(failures ? 1 : 0)

@@ -31,14 +31,24 @@ const MANIFEST_W2 = JSON.stringify({
 const manifestOf = (root) => (root === 'W2' ? MANIFEST_W2 : MANIFEST_W)
 // 真实形态：W 根无 plugins.json（仓库在子目录 W/repo，clone 部署）；W2 根即仓库
 const REPO_FILES = new Set(['W/repo/plugins.json', 'W2/plugins.json'])
+// 状态化落盘：writeConfig 经 subprocess `node -e` 写文件 → 这里截获 argv，readText/stat 可见
+const writtenFiles = new Map()
 const fsStub = {
   resolve: (p, opts) => (opts && (opts.cwd || opts.cwd === '') ? opts.cwd : 'W') + '/' + p,
-  stat: async (t) => (REPO_FILES.has(String(t)) ? {} : undefined),
+  stat: async (t) => (REPO_FILES.has(String(t)) || writtenFiles.has(String(t)) ? {} : undefined),
   listDir: async (t) => {
     const base = String(t).replace(/\/\.$/, '')
     return base === 'W' ? [{ name: 'repo', type: 'directory' }] : []
   },
-  readText: async (t) => manifestOf(String(t).replace(/\/plugins\.json$/, '')),
+  readText: async (t) => writtenFiles.has(String(t)) ? writtenFiles.get(String(t)) : manifestOf(String(t).replace(/\/plugins\.json$/, '')),
+}
+const subprocessStub = {
+  spawn(spec) {
+    // argv: [node, -e, <script>, <path>, <content>]
+    const argv = (spec && spec.argv) || []
+    if (argv[1] === '-e' && argv.length >= 5) writtenFiles.set(argv[3], argv[4])
+    return { done: Promise.resolve({ exitCode: 0 }) }
+  },
 }
 const runner = {
   inventory() {
@@ -48,6 +58,7 @@ const runner = {
       { pluginId: 'p3', agentId: 's1', activeRun: { pluginRunId: 'r3' }, packages: [{ packageId: 'k3', name: 'C', hasClientHalf: true }], currentPackageId: 'k3' }, // 不在清单（其他仓库）
       { pluginId: 'p4', agentId: 'toolbox-host-W2', activeRun: { pluginRunId: 'r4' }, packages: [{ packageId: 'k4', name: 'G2', hasClientHalf: false }], currentPackageId: 'k4' }, // 仓库 W2
       { pluginId: 'p5', agentId: 's1', activeRun: { pluginRunId: 'r5' }, packages: [{ packageId: 'k5', name: 'E', hasClientHalf: false }], currentPackageId: 'k5' }, // run 失败
+      { pluginId: 'p6', agentId: 's1', activeRun: null, packages: [{ packageId: 'k6', name: 'F', hasClientHalf: false }] }, // 被抑制：只 define 未 run，指针皆空
     ]
   },
   async run(agent, pluginId, pkg, mode) {
@@ -80,7 +91,8 @@ const ctx = {
     if (name === 'fs') return fsStub
     if (name === 'sandboxPolicy') return { workspaceRoot: 'W' }
     if (name === 'sessions') return sessionsStub
-    return undefined // subprocess 缺席（走降级分支）
+    if (name === 'subprocess') return subprocessStub // 状态化落盘（启停记忆可写可读）
+    return undefined
   },
   provide(name, value) { provided[name] = value },
   on() {},
@@ -149,19 +161,39 @@ const check = (label, cond, detail) => {
 
   // —— 管理 RPC：toolbox/plugins 按 cwd 解析 root → 对应仓库的清单行 ——
   const plW = await rpc['toolbox/plugins']({ cwd: 'W' })
-  check('plugins(cwd=W) 列 W 仓库行（p1/p2/p5）且不含 W2 行', plW.ok === true && JSON.stringify(plW.plugins.map((x) => x.pluginId)) === JSON.stringify(['p1', 'p2', 'p5']), JSON.stringify(plW.plugins.map((x) => x.pluginId)))
+  check('plugins(cwd=W) 列 W 仓库行（p1/p2/p5/p6）且不含 W2 行', plW.ok === true && JSON.stringify(plW.plugins.map((x) => x.pluginId)) === JSON.stringify(['p1', 'p2', 'p5', 'p6']), JSON.stringify(plW.plugins.map((x) => x.pluginId)))
   const plW2 = await rpc['toolbox/plugins']({ cwd: 'W2' })
   check('plugins(cwd=W2) 列 W2 仓库行（p4）', plW2.ok === true && JSON.stringify(plW2.plugins.map((x) => x.pluginId)) === JSON.stringify(['p4']), JSON.stringify(plW2.plugins.map((x) => x.pluginId)))
 
-  // —— agentFor：live 会话用 agents.get；宿主/幽灵 id 兜底最小 {id}；无效会话不再报「找不到」 ——
+  // —— 管理操作的 agent 取「行归属会话」（runner.owned 按定义会话校验所有权）：
+  // 调用方是 ghost/宿主垫片都不影响，run 的 agent 恒为行 agentId（p1 挂 s1）——
   calls.length = 0
   const rGhost = await rpc['toolbox/plugin-restart-all']({ cwd: 'W', session: 'ghost' })
-  check('restart-all(cwd=W) 只重跑 p1（A 在清单，运行中），ghost 兜底不报错', rGhost.ok === false && JSON.stringify(rGhost.done) === JSON.stringify(['p1']), JSON.stringify(rGhost.done))
-  check('ghost run 代理为兜底 {id:ghost}', calls.length > 0 && calls[0][1] === 'ghost')
+  check('restart-all(cwd=W) 只重跑 p1（A 在清单，运行中），ghost 不报错', rGhost.ok === false && JSON.stringify(rGhost.done) === JSON.stringify(['p1']), JSON.stringify(rGhost.done))
+  check('run 用行归属会话 agent（p1 → s1，非调用方 ghost）', calls.length > 0 && calls[0][1] === 's1', JSON.stringify(calls[0]))
 
   calls.length = 0
   await rpc['toolbox/plugin-restart-all']({ cwd: 'W', session: 'toolbox-host-abc' })
-  check('宿主垫片会话 run 代理为垫片对象', calls.length > 0 && calls[0][1] === 'toolbox-host-abc')
+  check('调用方为宿主会话时 run 仍用行归属 agent（s1）', calls.length > 0 && calls[0][1] === 's1', JSON.stringify(calls[0]))
+
+  // —— 被抑制插件（只 define 未 run，指针皆空）：toggle 启动回退行内最新 Package ——
+  calls.length = 0
+  const rSup = await rpc['toolbox/plugin-toggle']({ cwd: 'W', session: 's1', pluginId: 'p6', enable: true })
+  check('被抑制插件 toggle 启动成功', rSup.ok === true && rSup.running === true, JSON.stringify(rSup))
+  check('启动用行内最新 Package（k6）', calls.length === 1 && calls[0][3] === 'k6', JSON.stringify(calls[0]))
+
+  // —— 启停记忆实时性：写盘后 defaultStart 立即变化（清单映射缓存必须失效）——
+  const findRow = (pl, id) => pl.plugins.find((x) => x.pluginId === id)
+  const pl0 = await rpc['toolbox/plugins']({ cwd: 'W', session: 's1' })
+  check('defaultStart 初始取 autoStart（B=true）', findRow(pl0, 'p2').defaultStart === true, JSON.stringify(findRow(pl0, 'p2')))
+  const rStop = await rpc['toolbox/plugin-toggle']({ cwd: 'W', session: 's1', pluginId: 'p2', enable: false })
+  check('真停成功', rStop.ok === true, JSON.stringify(rStop))
+  const pl1 = await rpc['toolbox/plugins']({ cwd: 'W', session: 's1' })
+  check('真停后 defaultStart 随记忆变 false（缓存已失效）', findRow(pl1, 'p2').defaultStart === false, JSON.stringify(findRow(pl1, 'p2')))
+  const rSet = await rpc['toolbox/plugin-set-default']({ cwd: 'W', session: 's1', pluginId: 'p1', enabled: false })
+  check('plugin-set-default 写盘成功', rSet.ok === true, JSON.stringify(rSet))
+  const pl2 = await rpc['toolbox/plugins']({ cwd: 'W', session: 's1' })
+  check('set-default 后「重启后」pill 值立即翻转（A=false）', findRow(pl2, 'p1').defaultStart === false, JSON.stringify(findRow(pl2, 'p1')))
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')
   process.exit(failures ? 1 : 0)

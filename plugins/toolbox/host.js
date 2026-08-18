@@ -160,6 +160,10 @@ return {
 
     // ===== 插件生命周期管理（齿轮视图）=====
     const runner = ctx.get('dynamicCordisRunner')
+    // stopFromPanel 是 rc.7 runner 的面板方法，不是 wire-level 稳定协议：缺失时只降级
+    // 「停止」路径（返回明确错误并在清单里标 canStop=false 让前端禁用开关），清单读取、
+    // 普通工具、面板与启动路径保持可用。
+    const canStopFromPanel = Boolean(runner && typeof runner.stopFromPanel === 'function')
     const agents = ctx.get('agents')
     const sessionOf = (args) => (args && typeof args.session === 'string' && args.session) ? args.session : undefined
 
@@ -232,11 +236,17 @@ return {
           currentPackageId: r.currentPackageId || null,
           // 含 Client 半的插件启停涉及浏览器编排/批准，交给 Cordis 面板
           hasClientHalf: r.packages.some((p) => p.hasClientHalf),
+          canStop: canStopFromPanel,
           defaultStart: meta ? meta.defaultStart : null,
         })
       }
       return { ok: true, root, plugins: rows }
     }))
+
+    // 行内可运行的 Package：current/next 指针优先；被抑制插件（重建时只 define 未 run，
+    // 如启停记忆为关）两指针皆空 → 回退行内最新 Package（define 顺序追加，末位即最新）。
+    const pkgOf = (row) => row.currentPackageId || row.nextPackageId
+      || (row.packages && row.packages.length ? row.packages[row.packages.length - 1].packageId : null)
 
     // 真停/真启：stop 走 stopFromPanel（与面板一致，会向会话注入通知）；
     // run 直接激活（Host-only 无 Client 半 → 无需批准，同步完成）。
@@ -253,16 +263,23 @@ return {
       if (row.packages.some((p) => p.hasClientHalf)) {
         return { ok: false, error: pluginId + ' 含 Client 半，启停请到 Cordis 面板操作' }
       }
+      // runner 的 owned() 按「定义时的 sessionId」校验所有权：自举模式下插件挂在
+      // toolbox-host-* 垫片会话下，用调用方会话的 agent 会被拒（"lost on DSH restart"）——
+      // 一律按行归属会话取 agent（宿主垫片在 agents 服务里，非 live 会话兜底最小 {id}）。
+      const ownerAgent = agentFor(row.agentId)
       const enable = Boolean(args && args.enable)
       if (enable) {
         if (row.activeRun) return { ok: true, running: true, note: '已在运行' }
-        const pkg = row.currentPackageId || row.nextPackageId
+        const pkg = pkgOf(row)
         if (!pkg) return { ok: false, error: pluginId + ' 没有可运行的 Package' }
-        const res = await runInBuild(root, () => runner.run(agent, pluginId, pkg, 'run'))
+        const res = await runInBuild(root, () => runner.run(ownerAgent, pluginId, pkg, 'run'))
         if (res && res.ok) { await persistToggle(pluginId, true, root); return { ok: true, running: true } }
         return { ok: false, error: (res && (res.message || res.reason)) || '启动失败' }
       }
-      const res = await runner.stopFromPanel(agent, pluginId)
+      if (!canStopFromPanel) {
+        return { ok: false, error: '当前 DSH 缺少 runner.stopFromPanel 接口，无法停止插件（启动不受影响）' }
+      }
+      const res = await runner.stopFromPanel(ownerAgent, pluginId)
       if (res && res.ok) { await persistToggle(pluginId, false, root); return { ok: true, running: false } }
       return { ok: false, error: (res && (res.message || res.reason)) || '停止失败' }
     }))
@@ -295,6 +312,9 @@ return {
           graceMs: 10000,
         })
         await handle.done
+        // 启停记忆已变 → 失效该 root 的清单映射缓存（defaultStart 随记忆实时变化，
+        // 否则「重启后」pill 与重建默认值冻结在框架启动后首次读取）
+        manifestCacheByRoot.delete(root)
         return true
       } catch (e) { return false }
     }
@@ -356,9 +376,9 @@ return {
       if (row.packages.some((p) => p.hasClientHalf)) {
         return { ok: false, error: pluginId + ' 含 Client 半，重跑请到 Cordis 面板操作' }
       }
-      const pkg = row.currentPackageId || row.nextPackageId
+      const pkg = pkgOf(row)
       if (!pkg) return { ok: false, error: pluginId + ' 没有可运行的 Package' }
-      const res = await runInBuild(root, () => runner.run(agent, pluginId, pkg, 'run'))
+      const res = await runInBuild(root, () => runner.run(agentFor(row.agentId), pluginId, pkg, 'run'))
       if (res && res.ok) { await persistToggle(pluginId, true, root); return { ok: true, running: true } }
       return { ok: false, error: (res && (res.message || res.reason)) || '重跑失败' }
     }))
@@ -370,6 +390,9 @@ return {
       const agent = agentFor(sid)
       const root = await resolveRoot(args)
       const enable = Boolean(args && args.enable)
+      if (!enable && !canStopFromPanel) {
+        return { ok: false, error: '当前 DSH 缺少 runner.stopFromPanel 接口，无法批量停止（启动不受影响）' }
+      }
       // 清单映射 + 配置（各取一次，循环内复用）
       const entryIdByName = {}
       let cfg = null
@@ -391,19 +414,21 @@ return {
         const current = r.packages.find((p) => p.packageId === (r.currentPackageId || r.nextPackageId))
           || r.packages[r.packages.length - 1]
         const name = (current && current.name) || ''
+        // 按行归属会话取 agent（自举插件挂宿主垫片会话，调用方会话 agent 过不了 owned()）
+        const rowAgent = agentFor(r.agentId)
         if (enable) {
           if (r.activeRun) { done.push(r.pluginId + '（已在运行）') }
           else {
-            const pkg = r.currentPackageId || r.nextPackageId
+            const pkg = pkgOf(r)
             if (!pkg) { failed.push(r.pluginId + ': 没有可运行的 Package'); continue }
-            const res = await runInBuild(root, () => runner.run(agent, r.pluginId, pkg, 'run'))
+            const res = await runInBuild(root, () => runner.run(rowAgent, r.pluginId, pkg, 'run'))
             if (res && res.ok) done.push(r.pluginId)
             else { failed.push(r.pluginId + ': ' + ((res && (res.message || res.reason)) || '启动失败')); continue }
           }
         } else {
           if (!r.activeRun) { done.push(r.pluginId + '（本已停止）') }
           else {
-            const res = await runner.stopFromPanel(agent, r.pluginId)
+            const res = await runner.stopFromPanel(rowAgent, r.pluginId)
             if (res && res.ok) done.push(r.pluginId)
             else { failed.push(r.pluginId + ': ' + ((res && (res.message || res.reason)) || '停止失败')); continue }
           }
@@ -435,9 +460,9 @@ return {
         if (!isRepoRow(r, byName, sid)) continue
         if (r.packages.some((p) => p.hasClientHalf)) { skippedClient.push(r.pluginId); continue }
         if (!r.activeRun) continue // 只重跑运行中的
-        const pkg = r.currentPackageId || r.nextPackageId
+        const pkg = pkgOf(r)
         if (!pkg) { failed.push(r.pluginId + ': 没有可运行的 Package'); continue }
-        const res = await runInBuild(root, () => runner.run(agent, r.pluginId, pkg, 'run'))
+        const res = await runInBuild(root, () => runner.run(agentFor(r.agentId), r.pluginId, pkg, 'run'))
         if (res && res.ok) done.push(r.pluginId)
         else failed.push(r.pluginId + ': ' + ((res && (res.message || res.reason)) || '重跑失败'))
       }
@@ -721,7 +746,7 @@ return {
           const pkg = r.currentPackageId || r.nextPackageId
           if (!pkg) continue
           try {
-            const rr = await runInBuild(myRoot, () => runner.run(reattachAgent, r.pluginId, pkg, 'run'))
+            const rr = await runInBuild(myRoot, () => runner.run(agentFor(r.agentId), r.pluginId, pkg, 'run'))
             if (rr && rr.ok) {
               if (hasClient) reattachAsync.push(r.pluginId)
               else reattached.push(r.pluginId)

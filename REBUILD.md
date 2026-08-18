@@ -83,7 +83,7 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 
 计算台（Tab「计算」）：子模式芯片切换 编解码/正则/Cron/文本对比/生成器；各子模式状态独立命名空间（`st.codec/regex/cron/txtdiff/gen`）；派生大结果（cron 字段 Set、diff 行、生成列表）留闭包不进 state。
 
-加载链路：`payload 桩（~0.9KB，只探测根目录）` → `loader.js` → `shared/host.js + plugins/<key>/tool.js`。桩与 loader 的 new Function 帧显式下传 ctx/harness/console。框架 Client 半同样是加载桩：经 Host 半 `toolbox/client-impl` RPC 实时拉磁盘 `plugins/toolbox/client.js` 求值（ctx/React/host/styles/console 显式下传），改 UI 重跑 tbx 即生效、无需重新 define/批准。
+加载链路：`payload 桩（~0.9KB，只探测根目录）` → `loader.js` → `shared/host.js + plugins/<key>/tool.js`。桩与 loader 的 new Function 帧显式下传 ctx/harness/console。框架 Client 半同样是加载桩：经 Host 半 `toolbox/client-impl` RPC 实时拉磁盘 `plugins/toolbox/client.js` 求值（ctx/React/host/styles/console 显式下传），改 UI 重跑 tbx 即生效、无需重新 define/批准。Client 加载桩的 Timer 走 Cordis 生命周期：桩用 `ctx.get('timer')` 建浏览器兼容适配器（数字句柄 ↔ disposer 映射），把 setTimeout/setInterval/clearTimeout/clearInterval 作为第二层 new Function 的显式形参下传——不读浏览器全局（绕过 Dynamic Client Guard 的兼容风险），Package 停止/重跑时未决回调经 fiber teardown 全清、连续重跑不累积。
 
 ## 重建（define + run，按 `plugins.json` 清单）
 

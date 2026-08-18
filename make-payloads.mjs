@@ -198,15 +198,56 @@ const hostStubWithClientRpc = (name, inject, implFiles, rpc, clientRel) => hostS
 // ---- Client 加载桩：经 Host 半 <rpc> 实时拉磁盘 client.js 求值 ----
 // （嵌套 new Function 帧不吃外层形参——ctx/React/host/styles/console 显式下传）。
 // 改 plugins/<key>/client.js 后 cordis_run 重跑对应插件即生效，无需重新 define/批准。
+// Timer 生命周期：第二层函数不再从浏览器全局读 setTimeout/setInterval（那会绕过 Dynamic
+// Client Guard 的闭包 trap，也绕过 Fiber 清理）——改由桩在 apply 内用 Cordis timer 服务
+// 建浏览器兼容适配器（数字句柄 ↔ disposer 映射），作为显式形参下传；ctx.effect 的 teardown
+// 在 Package 停止/重跑时清掉全部未决回调，连续重跑不累积 interval。
 const clientLoaderStub = (rpc, key) => `// ===== ${key} Client 加载桩：实现实时从磁盘拉取（经 Host 半 ${rpc} RPC）=====
 return {
   name: '${key}-client-loader',
   inject: ['timer'],
   async apply(ctx) {
+    const timer = ctx.get('timer')
+    if (!timer) throw new Error('${key} client: timer 服务不可用')
+
+    let nextTimerId = 0
+    const pendingTimers = new Map()
+
+    const setTimeoutCompat = (callback, delay) => {
+      const id = ++nextTimerId
+      const dispose = timer.timeout(() => {
+        pendingTimers.delete(id)
+        callback()
+      }, delay)
+      pendingTimers.set(id, dispose)
+      return id
+    }
+
+    const setIntervalCompat = (callback, delay) => {
+      const id = ++nextTimerId
+      pendingTimers.set(id, timer.interval(callback, delay))
+      return id
+    }
+
+    const clearTimerCompat = (id) => {
+      const dispose = pendingTimers.get(id)
+      pendingTimers.delete(id)
+      if (dispose) dispose()
+    }
+
+    ctx.effect(() => () => {
+      for (const dispose of pendingTimers.values()) dispose()
+      pendingTimers.clear()
+    })
+
     const res = await host.call('${rpc}')
     if (!res || !res.ok) throw new Error('${rpc} 拉取失败: ' + String((res && res.error) || '(无响应)'))
-    const fn = new Function('ctx', 'React', 'host', 'styles', 'console', 'return (async () => {\\n' + res.code + '\\n})()')
-    const impl = await fn(ctx, React, host, styles, console)
+    const fn = new Function(
+      'ctx', 'React', 'host', 'styles', 'console',
+      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+      'return (async () => {\\n' + res.code + '\\n})()',
+    )
+    const impl = await fn(ctx, React, host, styles, console, setTimeoutCompat, setIntervalCompat, clearTimerCompat, clearTimerCompat)
     if (!impl || typeof impl.apply !== 'function') throw new Error('${key} client.js 未返回插件对象')
     return impl.apply(ctx)
   },

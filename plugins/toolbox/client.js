@@ -52,7 +52,7 @@ return {
       '.tb-entry{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;margin:0 4px 0 0;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#26272e);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;appearance:none;box-sizing:border-box;font-family:inherit}',
       '.tb-entry:hover{background:var(--dsw-alias-bg-layer-2,#30313a)}',
       '.tb-entry-active{color:var(--dsw-alias-brand-primary,#3b82f6);border-color:var(--dsw-alias-brand-primary,#3b82f6)}',
-      // ---- 侧边栏导航条目（DOM 注入，样式对齐任务看板/SSH 导航行） ----
+      // ---- 侧边栏导航条目（DOM 注入，样式对齐任务看板/SSH 导航行；无 DOM 环境走 Slot 兜底） ----
       '[data-dsh-toolbox-entry]{width:100%;height:32px;color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-radius:8px;align-items:center;gap:8px;padding:0 12px;font-size:13px;display:flex;font-family:inherit;box-sizing:border-box}',
       '[data-dsh-toolbox-entry]:hover{background:var(--dsw-specific-sidebar-nav-item-hover,var(--dsw-alias-bg-layer-2,#31323b));color:var(--dsw-alias-label-primary)}',
       '[data-dsh-toolbox-entry][data-active]{background:var(--dsw-specific-sidebar-nav-item-active,var(--dsw-alias-bg-layer-2,#31323b));color:var(--dsw-alias-label-primary);font-weight:600}',
@@ -463,10 +463,12 @@ return {
     }
 
     // ===== 侧边栏导航入口（DOM 注入） =====
-    // 侧边栏导航区（新会话 / 任务看板 / SSH 那一列）没有官方 Slot，任务看板与 dsh-ssh
-    // 同样走 DOM 注入 + MutationObserver 自愈。条目插在「新会话」行之后的插件族块
+    // 侧边栏导航区（新会话 / 任务看板 / SSH 那一列）rc.7 仍无官方 Slot（footer 的
+    // sidebar.footer.action 位置太差，用户决策回导航区），任务看板与 dsh-ssh 同样走
+    // DOM 注入 + MutationObserver 自愈。条目插在「新会话」行之后的插件族块
     // （taskboard/ssh/toolbox）末尾——即 SSH 之后、工作区之前；族块相对定位保证多个
     // 自愈插件重插后顺序稳定。纯 DOM（不进 React 树），不会干扰宿主 reconciliation。
+    // 无 DOM 环境（headless）退回官方 Slot 兜底。
     const NAV_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="12" height="8.5" rx="1.5"/><path d="M5.5 5V3.8A1.3 1.3 0 0 1 6.8 2.5h2.4A1.3 1.3 0 0 1 10.5 3.8V5"/><path d="M2 8.2h12"/></svg>'
     const NAV_FAMILY_SEL = '[data-dsh-taskboard-entry], [data-dsh-ssh-entry], [data-dsh-toolbox-entry]'
 
@@ -1385,6 +1387,7 @@ return {
 
       async function togglePlugin(p) {
         if (p.hasClientHalf) return
+        if (p.running && p.canStop === false) return
         setError(null)
         try {
           const r = await host.call('toolbox/plugin-toggle', {
@@ -2098,9 +2101,12 @@ return {
                         React.createElement('button', {
                           type: 'button',
                           className: 'tb-switch' + (p.running ? ' tb-switch-on' : ''),
-                          title: p.hasClientHalf ? '含 Client 半，请到 Cordis 面板操作' : (p.running ? '停止该插件' : '启动该插件'),
-                          disabled: Boolean(p.hasClientHalf),
-                          style: p.hasClientHalf ? { opacity: 0.4, cursor: 'default' } : null,
+                          // canStop=false：宿主缺少 stopFromPanel（停止降级）——运行中的插件开关禁用，停止的仍可启动
+                          title: p.hasClientHalf ? '含 Client 半，请到 Cordis 面板操作'
+                            : p.running ? (p.canStop === false ? '当前 DSH 缺少停止接口（stopFromPanel），无法停止' : '停止该插件')
+                            : '启动该插件',
+                          disabled: Boolean(p.hasClientHalf) || (p.running && p.canStop === false),
+                          style: (p.hasClientHalf || (p.running && p.canStop === false)) ? { opacity: 0.4, cursor: 'default' } : null,
                           onClick: () => togglePlugin(p),
                         }),
                       )
@@ -2217,6 +2223,7 @@ return {
       // 侧边栏导航区无官方 Slot：DOM 注入导航条目（新会话下方、SSH 之后），disposer 随插件停止清理
       ctx.effect(() => mountSidebarEntry())
     } else {
+      // 无 DOM 环境兜底：官方 footer Slot（rc.7 root-scoped list Slot，owner 只传 { wide }）
       slots.inject('sidebar.footer.action', () => slots.register(
         { name: 'sidebar.footer.action', id: 'toolbox-entry', order: -1000, label: '工具箱' },
         (props) => React.createElement(Entry, { wide: Boolean(props.wide) }),

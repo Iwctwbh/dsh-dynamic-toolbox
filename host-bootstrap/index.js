@@ -104,6 +104,17 @@ async function bootstrap(ctx, agent) {
   const runner = ctx.get('dynamicCordisRunner')
   const fs = ctx.get('fs')
   if (!runner || !fs || !agent) return
+  // 显式能力检查：进程内 Service 方法不是 wire-level 稳定协议，后续版本若删除/改名，
+  // 在自举中途以 "is not a function" 失败前，先给出一条明确的版本/能力错误。
+  const requiredRunnerMethods = ['define', 'run', 'inventory']
+  const missingRunnerMethods = requiredRunnerMethods.filter(
+    (method) => typeof runner[method] !== 'function',
+  )
+  if (missingRunnerMethods.length) {
+    throw new Error(
+      '工具箱需要 DSH rc.7 动态运行接口，缺少：' + missingRunnerMethods.join(', '),
+    )
+  }
   // 只服务根会话：子代理/工作流子会话不挂工具箱（否则每个 subagent 都弹卡）
   const agents = ctx.get('agents')
   if (agents && typeof agents.roots === 'function') {

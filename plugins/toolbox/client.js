@@ -48,6 +48,80 @@ return {
       }
     } catch (e) {}
 
+    // ===== Cordis 面板「隐藏无界面」联动（v6.6）=====
+    // 管理视图「隐藏无界面」开关同时隐藏左下角官方 Cordis 面板里的 Host-only 行并修正
+    // 触发按钮的 running 计数：官方行带 data-cordis-row=<pluginId> / data-cordis-awaiting 稳定钩子，
+    // 触发按钮带 data-cordis-badge。host-only 集合经 toolbox/plugins 计算（Host 半已有 inventory），
+    // MutationObserver 幂等打标隐藏（跳过待审批行）；计数 span 用 data-tb-count + CSS ::after
+    // 覆盖——不与 React 文本节点打架。开关与管理视图共用、localStorage 持久化，默认开。
+    const PANEL_HIDE_KEY = 'tbx-hide-host-only'
+    const panelHide = {
+      on: (() => { try { return localStorage.getItem(PANEL_HIDE_KEY) !== '0' } catch (e) { return true } })(),
+      headless: new Set(),
+      visibleRunning: 0,
+    }
+    styles.insert([
+      'li[data-cordis-row][data-tb-hide]{display:none!important}',
+      '[data-cordis-panel] section[data-tb-hide]{display:none!important}',
+      'button[data-cordis-badge] span[data-tb-count]{font-size:0!important}',
+      'button[data-cordis-badge] span[data-tb-count]::after{content:attr(data-tb-count);font-size:12px;line-height:16px}',
+    ].join(''))
+    function applyPanelHide() {
+      if (typeof document === 'undefined' || !document.body) return
+      for (const li of document.querySelectorAll('li[data-cordis-row]')) {
+        const hide = panelHide.on && panelHide.headless.has(li.getAttribute('data-cordis-row')) && !li.hasAttribute('data-cordis-awaiting')
+        if (hide) { if (!li.hasAttribute('data-tb-hide')) li.setAttribute('data-tb-hide', '') }
+        else if (li.hasAttribute('data-tb-hide')) li.removeAttribute('data-tb-hide')
+      }
+      const panel = document.querySelector('[data-cordis-panel]')
+      if (panel) for (const sec of panel.querySelectorAll('section')) {
+        const lis = sec.querySelectorAll('li[data-cordis-row]')
+        let vis = 0
+        for (const li of lis) if (!li.hasAttribute('data-tb-hide')) vis++
+        if (lis.length > 0 && vis === 0) { if (!sec.hasAttribute('data-tb-hide')) sec.setAttribute('data-tb-hide', '') }
+        else if (sec.hasAttribute('data-tb-hide')) sec.removeAttribute('data-tb-hide')
+      }
+      const badge = document.querySelector('button[data-cordis-badge]')
+      if (badge) for (const sp of badge.querySelectorAll('span')) {
+        if (!/^\s*\d+\s+running\s*$/.test(sp.textContent || '')) continue
+        const txt = panelHide.visibleRunning + ' running'
+        if (panelHide.on) { if (sp.getAttribute('data-tb-count') !== txt) sp.setAttribute('data-tb-count', txt) }
+        else if (sp.hasAttribute('data-tb-count')) sp.removeAttribute('data-tb-count')
+      }
+    }
+    let panelHideRaf = 0
+    function schedulePanelHide() {
+      if (panelHideRaf) return
+      panelHideRaf = requestAnimationFrame(() => { panelHideRaf = 0; applyPanelHide() })
+    }
+    async function refreshPanelHide() {
+      try {
+        const r = await host.call('toolbox/plugins', {})
+        if (!r || !r.ok || !Array.isArray(r.plugins)) return
+        panelHide.headless = new Set(r.plugins.filter((p) => !p.hasClientHalf).map((p) => p.pluginId))
+        panelHide.visibleRunning = r.plugins.filter((p) => p.hasClientHalf && p.running).length
+        applyPanelHide()
+      } catch (e) {}
+    }
+    function setPanelHideOn(v) {
+      panelHide.on = v
+      try { localStorage.setItem(PANEL_HIDE_KEY, v ? '1' : '0') } catch (e) {}
+      if (v) refreshPanelHide()
+      applyPanelHide()
+    }
+    if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+      const mo = new MutationObserver(schedulePanelHide)
+      mo.observe(document.body, {
+        childList: true, subtree: true, characterData: true, attributes: true,
+        attributeFilter: ['data-cordis-awaiting', 'data-cordis-row', 'data-cordis-badge'],
+      })
+      ctx.effect(() => () => mo.disconnect())
+      const phIv = setInterval(() => { if (panelHide.on) refreshPanelHide() }, 4000)
+      ctx.effect(() => () => clearInterval(phIv))
+      refreshPanelHide()
+      applyPanelHide()
+    }
+
     styles.insert([
       '.tb-entry{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;margin:0 4px 0 0;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#26272e);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;appearance:none;box-sizing:border-box;font-family:inherit}',
       '.tb-entry:hover{background:var(--dsw-alias-bg-layer-2,#30313a)}',
@@ -657,7 +731,7 @@ return {
       const [rebuildHistory, setRebuildHistory] = React.useState([])
       const [aiUsage, setAiUsage] = React.useState(null)
       const [pluginFilter, setPluginFilter] = React.useState('')
-      const [hideHostOnly, setHideHostOnly] = React.useState(false) // 管理页「隐藏无界面工具」开关（Host-only 无 Client 半）
+      const [hideHostOnly, setHideHostOnly] = React.useState(panelHide.on) // 「隐藏无界面」开关（管理页 + 左下角 Cordis 面板联动，localStorage 持久化）
       const [tabFilter, setTabFilter] = React.useState('') // 工具搜索（整行长条；仅会话内存）
       const [cat, setCat] = React.useState(() => { const s = lsRead(); return s && typeof s.cat === 'string' ? s.cat : 'ai' }) // 激活分类（localStorage 记忆）
       const [activeByCat, setActiveByCat] = React.useState(() => { const s = lsRead(); return (s && s.activeByCat && typeof s.activeByCat === 'object') ? s.activeByCat : {} }) // 各分类最近选中的工具（切分类时恢复）
@@ -1982,9 +2056,9 @@ return {
                 React.createElement('button', {
                   type: 'button',
                   className: 'tb-chip' + (hideHostOnly ? ' tb-chip-on' : ''),
-                  title: '隐藏无界面（Host-only）工具，只显示含界面（Client）的插件；对含 Client 半的插件工具箱只能启停、操作请去 Cordis 面板',
-                  onClick: () => setHideHostOnly((v) => !v),
-                }, hideHostOnly ? '显示全部' : '隐藏无界面'),
+                  title: '隐藏左下角 Cordis 面板里的无界面（Host-only）插件（管理页清单不受影响）；亮起为隐藏中，再次点击恢复',
+                  onClick: () => { const nv = !hideHostOnly; setHideHostOnly(nv); setPanelHideOn(nv) },
+                }, '隐藏CordisPlugin'),
                 React.createElement('input', {
                   className: 'tb-input',
                   style: { flex: '1', minWidth: '120px' },
@@ -2046,21 +2120,9 @@ return {
             ),
             React.createElement('div', { className: 'tb-pane-body tb-pane-col' },
               (() => {
-                // 「隐藏无界面」过滤：host-only（无 Client 半）不显示——含界面的插件启停走工具箱，
-                // 但含 Client 半的仍需去 Cordis 面板；过滤后空态给出提示而非「暂无动态插件」
-                const visiblePlugins = hideHostOnly ? plugins.filter((p) => p.hasClientHalf) : plugins
+                // 管理页永远全量清单；「隐藏无界面」开关只作用于左下角 Cordis 面板
+                const visiblePlugins = plugins
                 if (visiblePlugins.length === 0) {
-                  if (hideHostOnly) {
-                    return React.createElement('div', null,
-                      React.createElement('div', { className: 'tb-notice' }, '当前没有含界面（Client 半）的插件——全部 Host-only 工具已被「隐藏无界面」过滤'),
-                      React.createElement('button', {
-                        type: 'button',
-                        className: 'tb-btn',
-                        style: { marginTop: '8px' },
-                        onClick: () => setHideHostOnly(false),
-                      }, '显示全部 Host-only 工具'),
-                    )
-                  }
                   return React.createElement('div', { className: 'tb-notice' }, '暂无动态插件')
                 }
                 // 单个插件节点（行 key 用 pluginId，跨分类移动时稳定；条目 id 追加在副行便于辨认归属键）

@@ -85,12 +85,20 @@ return {
     const parseItems = (events) => {
       const items = []
       const byCallId = {}
+      const streamingAi = {} // turn:step → 首个 chunk 建立的临时助手卡；最终 message 原位落定，保持卡片 key 稳定
+      const stepStarts = {} // turn:step → step/start 时间；助手运行计时从请求步骤开始，而不是首个 token 才开始
       let route = '' // 最近 request/header 的 provider/model，贴给后续助手消息卡
       let curTurn = null // 最近 turn/start 的轮次：user/message 不带 turn，用它推算归属
       for (const ev of events) {
         if (!ev || typeof ev.seq !== 'number') continue
         const d = ev.data || {}
         if (ev.type === 'turn/start') { if (typeof d.turn === 'number') curTurn = d.turn; continue }
+        if (ev.type === 'step/start') {
+          const turn = typeof d.turn === 'number' ? d.turn : curTurn
+          const step = typeof d.step === 'number' ? d.step : 0
+          stepStarts[String(turn) + ':' + step] = ev.time
+          continue
+        }
         if (ev.type === 'request/header') {
           const cfg = d.header && d.header.config
           if (cfg && cfg.model) route = (cfg.provider ? cfg.provider + '/' : '') + cfg.model
@@ -131,11 +139,60 @@ return {
           // 空内容的上下文注入（subagent-settled 占位等）是噪声，不进流程图
           if (src !== 'user' && !preview) continue
           items.push({ kind: 'msg', role: src === 'user' ? 'user' : 'inject', seq: ev.seq, time: ev.time, turn: curTurn, preview, full: textOf(d.content) })
+        } else if (ev.type === 'assistant/chunk') {
+          const turn = typeof d.turn === 'number' ? d.turn : curTurn
+          const step = typeof d.step === 'number' ? d.step : 0
+          const key = String(turn) + ':' + step
+          let it = streamingAi[key]
+          if (!it) {
+            it = { kind: 'msg', role: 'ai', seq: ev.seq, time: ev.time, turn, step, runStart: stepStarts[key] || ev.time, preview: '正在生成…', full: '', tok: null, route, streaming: true, chunks: [], reasoningChunks: [] }
+            streamingAi[key] = it
+            items.push(it)
+          }
+          const chunk = d.chunk || {}
+          if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+            it.chunks.push(chunk.text)
+          } else if (chunk.type === 'reasoning-delta' && typeof chunk.text === 'string') {
+            it.reasoningChunks.push(chunk.text)
+          } else if (/tool-call/i.test(String(chunk.type || ''))) {
+            it.hasToolCallChunk = true
+          }
         } else if (ev.type === 'assistant/message') {
           const m = d.message || {}
           const u = d.usage || null
-          items.push({ kind: 'msg', role: 'ai', seq: ev.seq, time: ev.time, turn: typeof d.turn === 'number' ? d.turn : curTurn, preview: oneLine(textOf(m.content), 110) || '（工具调用）', full: textOf(m.content), tok: u ? (u.outputTokens || 0) : null, route })
+          const turn = typeof d.turn === 'number' ? d.turn : curTurn
+          const step = typeof d.step === 'number' ? d.step : 0
+          const key = String(turn) + ':' + step
+          const finalText = textOf(m.content)
+          const draft = streamingAi[key]
+          if (draft) {
+            // 保留首 chunk 的 seq，避免轮询时临时卡被当成另一张新卡；内容与完成态原位更新。
+            draft.preview = oneLine(finalText, 110) || '（工具调用）'
+            draft.full = finalText
+            draft.tok = u ? (u.outputTokens || 0) : null
+            draft.route = route
+            draft.streaming = false
+            draft.finalSeq = ev.seq
+            draft.runDur = Math.max(0, ev.time - draft.runStart)
+            delete draft.chunks
+            delete draft.reasoningChunks
+            delete draft.hasToolCallChunk
+          } else {
+            const runStart = stepStarts[key] || ev.time
+            items.push({ kind: 'msg', role: 'ai', seq: ev.seq, time: ev.time, turn, step, runStart, runDur: Math.max(0, ev.time - runStart), preview: oneLine(finalText, 110) || '（工具调用）', full: finalText, tok: u ? (u.outputTokens || 0) : null, route, streaming: false })
+          }
         }
+      }
+      // 流式中的助手卡只在整轮扫描结束后合并一次，避免每个 chunk 都重拼全文造成 O(n²) 和面板超时。
+      for (const it of Object.values(streamingAi)) {
+        if (!it.streaming) continue
+        const text = Array.isArray(it.chunks) ? it.chunks.join('') : ''
+        const reasoning = Array.isArray(it.reasoningChunks) ? it.reasoningChunks.join('') : ''
+        it.full = text || reasoning
+        it.preview = oneLine(it.full, 110) || (it.hasToolCallChunk ? '正在准备工具调用…' : (reasoning ? '思考中…' : '正在生成…'))
+        delete it.chunks
+        delete it.reasoningChunks
+        delete it.hasToolCallChunk
       }
       return items
     }
@@ -172,9 +229,18 @@ return {
           rows.push({ txt: it.name + ' ' + oneLine(it.argsRaw, 40), cls: '', pill: km.label, status: it.status, dur: it.dur })
         }
       }
-      const sessionsSvc = ctx.get('sessions')
       let live = false
-      try { live = !!(sessionsSvc && sessionsSvc.get(childId)) } catch (e) {}
+      try {
+        const agentsSvc = ctx.get('agents')
+        if (agentsSvc) {
+          const agent = agentsSvc.get(childId)
+          live = !!(agent && agent.status === 'running')
+        } else {
+          // 旧版 harness/测试环境没有 agents 状态面，只能以仍挂载的 session 作为兼容兜底。
+          const sessionsSvc = ctx.get('sessions')
+          live = !!(sessionsSvc && sessionsSvc.get(childId))
+        }
+      } catch (e) {}
       return { rows: rows.slice(-cap), live, total: rows.length }
     }
 
@@ -219,7 +285,7 @@ return {
       const isExp = expandedSeq === c.seq
       const pending = c.status === 'pending'
       const o = outSummary(c)
-      return '<div class="fl-wp">' +
+      return '<div class="fl-wp" data-flow-card="' + c.seq + '" data-flow-status="' + c.status + '">' +
           '<div class="fl-wl"><span class="fl-wl-txt">输入 ' + esc(inSummary(c)) + '</span>' +
             '<span class="fl-wl-row"><span class="fl-wl-line"></span><span class="fl-wl-arr">▶</span></span></div>' +
           (pending
@@ -232,7 +298,7 @@ return {
           '<div class="fl-iocard' + (pending ? ' fl-live' : '') + (isExp ? ' fl-on' : '') + (o && o.err ? ' fl-err' : '') + '" data-action="fdetail" data-seq="' + c.seq + '" title="点击在右侧查看完整传入/返回">' +
             '<div class="fl-iohead"><span class="fl-tag" style="color:' + km.color + ';background:' + km.bg + '">' + km.label + '</span>' +
             '<span class="fl-name">' + esc(c.name) + '</span>' +
-            (pending ? '<span class="fl-spin"></span>' : statusGlyph(c.status, c.dur)) + '</div>' +
+            (pending ? '<span class="fl-spin"></span><span class="fl-time" data-flow-timer="' + c.time + '" data-flow-timer-prefix="⏱ ">⏱ 0ms</span>' : statusGlyph(c.status, c.dur)) + '</div>' +
           '</div>' +
         '</div>'
     }
@@ -263,14 +329,16 @@ return {
     const msgCardInner = (it, expandedSeq, live) => {
       const isUser = it.role === 'user'
       const isAi = it.role === 'ai'
+      const aiRunning = isAi && it.streaming
       const color = isUser ? 'var(--tb-done-text,#81c784)' : isAi ? 'var(--tb-active-text,#7fa7f0)' : 'var(--tb-text-3,#777884)'
       const label = isUser ? '用户' : isAi ? '助手' : '注入'
       // 卡片统一面片底色（fl-node），角色色只落在左侧色条 + 几何符号/tag 上，避免整卡彩色半透明的杂乱感
       // 用户/助手/注入卡均可点开右侧详情浮层看完整内容（与工具卡同一交互）；live=进行中 → 与工具卡同款流光脉冲
-      return '<div class="fl-node' + (expandedSeq === it.seq ? ' fl-on' : '') + (live ? ' fl-live' : '') + '" style="border-left-color:' + color + '" data-action="fdetail" data-seq="' + it.seq + '" title="点击查看完整消息">' +
+      return '<div class="fl-node' + (expandedSeq === it.seq ? ' fl-on' : '') + (live ? ' fl-live' : '') + '" style="border-left-color:' + color + '" data-flow-main-card="' + it.seq + '" data-flow-role="' + it.role + '" data-action="fdetail" data-seq="' + it.seq + '" title="点击查看完整消息">' +
         '<div class="fl-node-head"><span class="fl-glyph" style="color:' + color + '">' + (isUser ? '▲' : isAi ? '◆' : '■') + '</span><span class="fl-tag" style="color:' + color + '">' + label + '</span>' +
         (isAi && it.route ? '<span class="fl-model">' + esc(it.route) + '</span>' : '') +
         (fmtTime(it.time) ? '<span class="fl-time">' + fmtTime(it.time) + '</span>' : '') +
+        (aiRunning && it.runStart ? '<span class="fl-time" data-flow-timer="' + it.runStart + '" data-flow-timer-prefix="⏱ ">⏱ 0ms</span>' : (isAi && it.runDur != null ? '<span class="fl-time">⏱ ' + fmtDur(it.runDur) + '</span>' : '')) +
         (it.tok ? '<span class="fl-time">+' + it.tok + ' tok</span>' : '') + '</div>' +
         '<div class="fl-preview">' + esc(it.preview || '（空）') + '</div>' +
       '</div>'
@@ -368,13 +436,23 @@ return {
       await loadManifestTools()
       const items = parseItems(r.events || [])
       const nodes = buildNodes(items)
-      // 活跃且最新事件是一条助手消息 → 该助手卡流光（正在生成下一步）
+      // 会话仍在运行且最新事件是一条助手消息 → 该助手卡持续流光；日志增长作为 sessions 服务缺失时的兜底。
       const lastIt = items.length ? items[items.length - 1] : null
-      const liveAiSeq = active && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' ? lastIt.seq : null
+      let sessionLive = false
+      let hasAgentStatus = false
+      try {
+        const agentsSvc = ctx.get('agents')
+        if (agentsSvc) {
+          hasAgentStatus = true
+          const agent = agentsSvc.get(sid)
+          sessionLive = !!(agent && agent.status === 'running')
+        }
+      } catch (e) {}
+      const liveAiSeq = (hasAgentStatus ? sessionLive : active) && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' ? lastIt.seq : null
       const CAP = 60
       const shown = nodes.slice(-CAP)
       const parts = []
-      parts.push('<div class="jr-tabpanel tb-root tb-pane" data-flow data-autorefresh="' + (st.live ? '2000' : '') + '" data-tab-badge="' + (st.live ? String(nodes.length) : '') + '">')
+      parts.push('<div class="jr-tabpanel tb-root tb-pane" data-flow data-flow-scope="' + esc(sid) + '" data-autorefresh="' + (st.live ? '2000' : '') + '" data-tab-badge="' + (st.live ? String(nodes.length) : '') + '">')
       // 固定头
       parts.push('<div class="tb-pane-head">')
       // 钻取态：查看的不是面板所属会话 → 头部给「← 返回」+ 层级标注（crumbs 栈深度）
@@ -386,7 +464,6 @@ return {
         '<span class="tb-note">' + esc(sid.replace(/^session-/, '').slice(0, 8)) + ' · ' + items.length + ' 条事件 · ' + nodes.length + ' 节点' + (drilled ? ' · 第 ' + (depth + 1) + ' 层' : '') + '</span>' +
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
-        '<button type="button" class="tb-btn tb-btn-sm" data-action="jump-latest" title="滚动到最新（底部）；与右下角浮标同一动作">↓ 最新</button>' +
       '</div>')
       parts.push('<div class="tb-note">泳道：中列主干自上而下（用户/助手）；调用右出输入卡 ▶、左回输出卡 ◀，进行中的调用高亮脉冲；子代理分支在左列（入口/支线/出口），与主干卡同行不留空白；点工具卡看完整传入/返回，点消息卡看完整内容；点子代理分支「进入 →」钻取该子会话的完整流程图</div>')
       parts.push('</div>')

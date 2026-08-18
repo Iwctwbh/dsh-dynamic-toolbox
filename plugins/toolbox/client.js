@@ -117,9 +117,6 @@ return {
       '.jr-resize-corner:hover{background:rgba(59,130,246,.22);border-radius:0 0 10px 0}',
       '.jr-resize-badge{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:5px 12px;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-variant-numeric:tabular-nums;z-index:1310;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.3)}',
       '.tb-frame{position:relative;display:flex;flex-direction:column;gap:10px;min-height:0}',
-      // 「回到最新」浮标：面板不在底部时显示（column-reverse 滚动容器 scrollTop<-40 / 正常方向 dist>40），点击平滑回底
-      '.tb-jump-latest{position:absolute;right:16px;bottom:14px;z-index:6;display:inline-flex;align-items:center;height:27px;padding:0 13px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#454650);background:var(--dsw-alias-bg-overlay,#1e1f24);color:var(--tb-accent-text,#7fa7f0);font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);font-family:inherit;animation:jrDrawerUp .16s ease-out}',
-      '.tb-jump-latest:hover{border-color:var(--tb-accent-border,rgba(91,141,239,.45))}',
       // ---- 画中画（Document PiP）：主抽屉 DOM 的实时镜像窗口（脱离 WebUI 框体） ----
       '.jr-pip-root{display:flex;flex-direction:column;height:100vh;background:var(--dsw-alias-bg-base,#17181d);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;overflow:hidden;font-family:inherit}',
       '.jr-pip-bar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#3a3b44);background:var(--dsw-alias-bg-layer-1,#26272e)}',
@@ -358,7 +355,7 @@ return {
       '.fl-wp{display:flex;flex-direction:column;justify-content:center;gap:10px;min-width:0}',
       '.fl-wl{display:flex;flex-direction:column;gap:2px;min-width:0}',
       '.fl-wl-txt{font-family:ui-monospace,Consolas,monospace;font-size:9px;line-height:1.2;color:var(--tb-accent-text,#7fa7f0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.fl-wl-row{display:flex;align-items:center;gap:3px;height:8px}',
+      '.fl-wl-row{position:relative;display:flex;align-items:center;gap:3px;height:8px}',
       '.fl-wl-line{flex:1;height:1px;min-width:8px;background:var(--tb-accent-border,rgba(91,141,239,.45))}',
       '.fl-wl-arr{flex:none;font-size:7px;line-height:1;color:var(--tb-accent-border,rgba(91,141,239,.6))}',
       '.fl-wl-b .fl-wl-txt{color:var(--tb-done-text,#81c784)}',
@@ -375,21 +372,38 @@ return {
       '.fl-iocard.fl-on{border-color:var(--tb-accent-border,rgba(91,141,239,.6));background:var(--tb-accent-bg,rgba(91,141,239,.08))}',
       '.fl-iocard.fl-err{border-color:var(--tb-danger-border,rgba(239,83,80,.5))}',
       '.fl-live{border-color:var(--tb-accent-border,rgba(91,141,239,.65))!important;animation:flPulse 1.6s ease-in-out infinite}',
+      // 右侧调用组：输入光点 .5s → 卡片至少流光一圈 1s；输出光点等真实完成态才触发 .5s。
+      // 快速调用也先走完输入+一圈流光，慢调用则由 fl-live 接续流光等待结果。
+      // 输入能量点沿蓝线左→右；输出能量点沿绿线右→左，不再让整条线同时闪烁。
+      '.fl-min-anim>.fl-wl:not(.fl-wl-b)>.fl-wl-row::after{content:"";position:absolute;top:50%;left:0;width:6px;height:3px;border-radius:999px;pointer-events:none;background:var(--tb-accent-text,#7fa7f0);box-shadow:0 0 3px var(--tb-accent-text,#7fa7f0),0 0 7px var(--tb-accent-text,#7fa7f0);animation:flWireTravelRight .5s linear var(--fl-min-delay,0ms) 1 both}',
+      '.fl-output-anim>.fl-wl.fl-wl-b>.fl-wl-row::after{content:"";position:absolute;top:50%;right:0;width:6px;height:3px;border-radius:999px;pointer-events:none;background:var(--tb-done-text,#81c784);box-shadow:0 0 3px var(--tb-done-text,#81c784),0 0 7px var(--tb-done-text,#81c784);animation:flWireTravelLeft .5s linear var(--fl-output-delay,0ms) 1 both}',
+      '.fl-min-anim .fl-iocard{position:relative;border-color:var(--tb-accent-border,rgba(91,141,239,.65))!important}',
+      // 固定序列期间压住原有的卡片/状态点循环脉冲，避免它与输入、流光、输出三个阶段并发。
+      '.fl-min-anim .fl-live{animation:none}',
+      '.fl-min-anim .fl-live .fl-iohead::before{animation:none;opacity:0}',
+      // 主线用户/助手卡：新出现时固定流光一圈；助手仍在进行时，固定圈结束后由 fl-live 接续持续流光。
+      '.fl-main-min-anim{position:relative;border-color:var(--tb-accent-border,rgba(91,141,239,.65))!important}',
       // 运行中卡片：渐变流光贴边转圈（conic-gradient 环形遮罩 + 角度动画）。
       // @property 驱动角度 → 亮段沿边框流动；mask-composite 裁出 1.5px 描边环，内容不被遮。
       // 不支持 mask-composite / @property 的环境走 @supports 整体降级为原有脉冲。
       '.fl-live{position:relative}',
       '@supports (mask-composite: exclude) or (-webkit-mask-composite: xor){' +
-        '.fl-live::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;' +
+        '.fl-live::before,.fl-min-anim .fl-iocard::before,.fl-main-min-anim::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;' +
         'background:conic-gradient(from var(--fl-sweep,0deg),transparent 0deg,rgba(127,167,240,.9) 55deg,transparent 135deg);' +
         '-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;' +
-        'mask-composite:exclude;pointer-events:none;animation:flSweep 1.5s linear infinite}' +
+        'mask-composite:exclude;pointer-events:none}' +
+        '.fl-live::before{animation:flSweep 1s linear infinite}' +
+        '.fl-min-anim .fl-iocard::before{opacity:0;animation:flMinSweep 1s linear calc(500ms + var(--fl-min-delay,0ms)) 1 both}' +
+        '.fl-main-min-anim::before{animation:flSweep 1s linear var(--fl-main-delay,0ms) 1 both}' +
         // 日模式（浅色）下加深加宽亮段，流光同样明显
-        'body:not([data-ds-dark-theme]) .fl-live::before{' +
+        'body:not([data-ds-dark-theme]) .fl-live::before,body:not([data-ds-dark-theme]) .fl-min-anim .fl-iocard::before,body:not([data-ds-dark-theme]) .fl-main-min-anim::before{' +
         'background:conic-gradient(from var(--fl-sweep,0deg),transparent 0deg,rgba(43,102,240,.95) 80deg,transparent 165deg)}' +
       '}',
       '@property --fl-sweep{syntax:"<angle>";initial-value:0deg;inherits:false}',
       '@keyframes flSweep{to{--fl-sweep:360deg}}',
+      '@keyframes flMinSweep{0%{opacity:0;--fl-sweep:0deg}.1%{opacity:1;--fl-sweep:0deg}99.9%{opacity:1;--fl-sweep:360deg}100%{opacity:0;--fl-sweep:360deg}}',
+      '@keyframes flWireTravelRight{0%{opacity:0;left:0;transform:translateY(-50%) scale(.7)}10%{opacity:1}90%{opacity:1}100%{opacity:0;left:calc(100% - 6px);transform:translateY(-50%) scale(1)}}',
+      '@keyframes flWireTravelLeft{0%{opacity:0;right:0;transform:translateY(-50%) scale(.7)}10%{opacity:1}90%{opacity:1}100%{opacity:0;right:calc(100% - 6px);transform:translateY(-50%) scale(1)}}',
       // LIVE 脉冲点（进行中调用卡头部，蓝图风）
       '.fl-live .fl-iohead::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tb-done-text,#81c784);animation:flBlink 1.1s ease-in-out infinite}',
       // 助手卡进行中同款流光 + 脉冲点（与工具卡视觉一致）
@@ -903,6 +917,8 @@ return {
       const htmlRef = React.useRef({})
       const htmlScrollRef = React.useRef(null) // 静默刷新前记录的滚动位置（effect 里恢复，防自动刷新打断阅读）
       const seqRef = React.useRef({}) // toolId -> 最新请求序号：丢弃过期响应，防 provider/模型联动竞态
+      // 流程右侧调用卡的最短动画跨 innerHTML 轮询续播：scope 隔离主/子会话，key 对应调用 seq。
+      const flowAnimRef = React.useRef({ scope: null, seen: new Set(), expires: new Map(), introEnds: new Map(), statuses: new Map(), outputStarts: new Map(), outputExpires: new Map(), timers: new Map() })
       const managingRef = React.useRef(false)
       managingRef.current = managing
       const activeRef = React.useRef(null) // 延迟回调里取最新 active（重启落定后的面板刷新）
@@ -929,6 +945,13 @@ return {
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
         if (!panelRef.current) return
+        // 明确声明默认到底部的正常方向面板（当前为「上下文」）优先于旧 Tab 的滚动位置恢复。
+        const defaultBottom = panelRef.current.querySelector('[data-scroll-default="bottom"]')
+        if (defaultBottom) {
+          try { defaultBottom.scrollTop = defaultBottom.scrollHeight } catch (e) {}
+          htmlScrollRef.current = null
+          return
+        }
         const saved = htmlScrollRef.current
         htmlScrollRef.current = null
         if (saved && saved.tool === activeRef.current) {
@@ -945,29 +968,178 @@ return {
         } catch (e) {}
       }, [html])
 
-      // 「回到最新」浮标：面板滚动容器不在底部时显示；scroll 不冒泡，挂容器捕获阶段（innerHTML 重渲不影响）
-      // 依赖含 html：切管理视图/Tab 后 .tb-frame 是新建 DOM 节点，必须重新挂监听器（只挂 isOpen 会挂在已销毁节点上，浮标失效）
-      const [showJump, setShowJump] = React.useState(false)
+      // 新调用固定先走完 1.5s（输入 .5s + 流光 1s）；返回动画由 pending → 完成/失败的真实状态触发。
+      // dangerouslySetInnerHTML 会整块替换卡片 DOM，因此用调用 key 保存截止时间，并在每次替换后把类续挂到新节点。
       React.useEffect(() => {
-        if (!isOpen) return undefined
-        const root = panelRef.current
-        if (!root) return undefined
-        const onScroll = (e) => {
-          const t = e.target
-          if (!t || !t.classList || !t.classList.contains('tb-pane-body')) return
-          // column-reverse：底部 scrollTop=0 向上为负；正常方向（tb-pane-col）：底部 scrollTop+clientHeight≈scrollHeight
-          const away = t.classList.contains('tb-pane-col')
-            ? (t.scrollHeight - t.scrollTop - t.clientHeight > 40)
-            : (t.scrollTop < -40)
-          setShowJump(away)
+        const box = panelRef.current
+        const flow = box && box.querySelector('[data-flow][data-flow-scope]')
+        const store = flowAnimRef.current
+        const clearStore = () => {
+          for (const timer of store.timers.values()) { try { clearTimeout(timer) } catch (e) {} }
+          store.timers.clear()
+          store.expires.clear()
+          store.introEnds.clear()
+          store.statuses.clear()
+          store.outputStarts.clear()
+          store.outputExpires.clear()
+          store.seen.clear()
         }
-        root.addEventListener('scroll', onScroll, true)
-        return () => { try { root.removeEventListener('scroll', onScroll, true) } catch (e) {} }
-      }, [isOpen, html])
-      const jumpToLatest = () => {
-        const s = panelRef.current && panelRef.current.querySelector('.tb-pane-body')
-        if (s) s.scrollTo({ top: s.classList.contains('tb-pane-col') ? s.scrollHeight : 0, behavior: 'smooth' })
-      }
+        if (active !== 'flow' || !flow) {
+          if (store.scope != null) clearStore()
+          store.scope = null
+          return
+        }
+        const scope = flow.getAttribute('data-flow-scope') || ''
+        const cards = [...flow.querySelectorAll('.fl-wp[data-flow-card]')]
+        const mainSelector = '.fl-node[data-flow-main-card][data-flow-role="user"],.fl-node[data-flow-main-card][data-flow-role="ai"]'
+        const mainCards = [...flow.querySelectorAll(mainSelector)]
+        if (store.scope !== scope) {
+          clearStore()
+          store.scope = scope
+          // 首次打开建立历史基线，但最新用户卡不能被吞掉：它通常就是触发本轮流程的当前消息。
+          // DOM 因 column-reverse 不是时间顺序，按 seq 数值找最新用户卡。
+          for (const card of cards) {
+            const key = card.getAttribute('data-flow-card') || ''
+            store.seen.add(key)
+            if (key) store.statuses.set(key, card.getAttribute('data-flow-status') || 'pending')
+          }
+          let latestUserKey = ''
+          let latestUserSeq = -Infinity
+          for (const card of mainCards) {
+            const rawKey = card.getAttribute('data-flow-main-card') || ''
+            const seq = Number(rawKey)
+            if (card.getAttribute('data-flow-role') === 'user' && Number.isFinite(seq) && seq > latestUserSeq) {
+              latestUserSeq = seq
+              latestUserKey = rawKey
+            }
+          }
+          for (const card of mainCards) {
+            const rawKey = card.getAttribute('data-flow-main-card') || ''
+            if (rawKey !== latestUserKey) store.seen.add('main:' + rawKey)
+          }
+        }
+        const now = Date.now()
+        for (const card of cards) {
+          const key = card.getAttribute('data-flow-card') || ''
+          if (!key) continue
+          const status = card.getAttribute('data-flow-status') || 'pending'
+          const isNew = !store.seen.has(key)
+          const previousStatus = store.statuses.get(key)
+          if (isNew) {
+            store.seen.add(key)
+            store.introEnds.set(key, now + 1500)
+          }
+          const introEnd = store.introEnds.get(key) || 0
+          // 首次看到时已经完成，或后续由 pending 变为完成/失败：输出从“至少一圈流光结束”和“真实结束”两者较晚者开始。
+          if ((isNew && status !== 'pending') || (previousStatus === 'pending' && status !== 'pending')) {
+            const outputStart = Math.max(now, introEnd)
+            store.outputStarts.set(key, outputStart)
+            store.outputExpires.set(key, outputStart + 500)
+          }
+          store.statuses.set(key, status)
+
+          if (introEnd > now) {
+            // DOM 被轮询替换时用负 delay 从原进度续播，不从 0 重新开始。
+            card.style.setProperty('--fl-min-delay', '-' + Math.max(0, 1500 - (introEnd - now)) + 'ms')
+            card.classList.add('fl-min-anim')
+          }
+          const introTimerKey = 'intro:' + key
+          if (introEnd > now && !store.timers.has(introTimerKey)) {
+            const timer = setTimeout(() => {
+              store.timers.delete(introTimerKey)
+              store.introEnds.delete(key)
+              const currentFlow = panelRef.current && panelRef.current.querySelector('[data-flow][data-flow-scope]')
+              if (!currentFlow || (currentFlow.getAttribute('data-flow-scope') || '') !== scope) return
+              for (const current of currentFlow.querySelectorAll('.fl-wp[data-flow-card]')) {
+                if ((current.getAttribute('data-flow-card') || '') === key) {
+                  current.classList.remove('fl-min-anim')
+                  current.style.removeProperty('--fl-min-delay')
+                }
+              }
+            }, Math.max(0, introEnd - now))
+            store.timers.set(introTimerKey, timer)
+          }
+
+          const outputStart = store.outputStarts.get(key) || 0
+          const outputEnd = store.outputExpires.get(key) || 0
+          if (outputEnd > now) {
+            const outputDelay = outputStart > now ? outputStart - now : -(now - outputStart)
+            card.style.setProperty('--fl-output-delay', outputDelay + 'ms')
+            card.classList.add('fl-output-anim')
+          }
+          const outputTimerKey = 'output:' + key
+          if (outputEnd > now && !store.timers.has(outputTimerKey)) {
+            const timer = setTimeout(() => {
+              store.timers.delete(outputTimerKey)
+              store.outputStarts.delete(key)
+              store.outputExpires.delete(key)
+              const currentFlow = panelRef.current && panelRef.current.querySelector('[data-flow][data-flow-scope]')
+              if (!currentFlow || (currentFlow.getAttribute('data-flow-scope') || '') !== scope) return
+              for (const current of currentFlow.querySelectorAll('.fl-wp[data-flow-card]')) {
+                if ((current.getAttribute('data-flow-card') || '') === key) {
+                  current.classList.remove('fl-output-anim')
+                  current.style.removeProperty('--fl-output-delay')
+                }
+              }
+            }, Math.max(0, outputEnd - now))
+            store.timers.set(outputTimerKey, timer)
+          }
+        }
+        for (const card of mainCards) {
+          const rawKey = card.getAttribute('data-flow-main-card') || ''
+          if (!rawKey) continue
+          const key = 'main:' + rawKey
+          if (!store.seen.has(key)) {
+            store.seen.add(key)
+            store.expires.set(key, now + 1000)
+          }
+          const expires = store.expires.get(key) || 0
+          if (expires <= now) continue
+          card.style.setProperty('--fl-main-delay', '-' + Math.max(0, 1000 - (expires - now)) + 'ms')
+          card.classList.add('fl-main-min-anim')
+          if (!store.timers.has(key)) {
+            const timer = setTimeout(() => {
+              store.timers.delete(key)
+              store.expires.delete(key)
+              const currentFlow = panelRef.current && panelRef.current.querySelector('[data-flow][data-flow-scope]')
+              if (!currentFlow || (currentFlow.getAttribute('data-flow-scope') || '') !== scope) return
+              for (const current of currentFlow.querySelectorAll(mainSelector)) {
+                if ((current.getAttribute('data-flow-main-card') || '') === rawKey) {
+                  current.classList.remove('fl-main-min-anim')
+                  current.style.removeProperty('--fl-main-delay')
+                }
+              }
+            }, Math.max(0, expires - now))
+            store.timers.set(key, timer)
+          }
+        }
+      }, [active, html])
+
+      React.useEffect(() => () => {
+        const store = flowAnimRef.current
+        for (const timer of store.timers.values()) { try { clearTimeout(timer) } catch (e) {} }
+        store.timers.clear()
+      }, [])
+
+      // 工具与流式助手的运行耗时不依赖 2s 面板轮询：Client 每 250ms 就地更新一次。
+      React.useEffect(() => {
+        if (!isOpen || active !== 'flow') return undefined
+        const updateTimers = () => {
+          const root = panelRef.current
+          if (!root) return
+          const now = Date.now()
+          for (const el of root.querySelectorAll('[data-flow-timer]')) {
+            const started = Number(el.getAttribute('data-flow-timer'))
+            if (!Number.isFinite(started)) continue
+            const ms = Math.max(0, now - started)
+            const shown = ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(1) + 's'
+            el.textContent = (el.getAttribute('data-flow-timer-prefix') || '') + shown
+          }
+        }
+        updateTimers()
+        const timer = setInterval(updateTimers, 250)
+        return () => { try { clearInterval(timer) } catch (e) {} }
+      }, [isOpen, active, html])
 
       // —— 当前会话/工作区解析（v6.5）——
       // 抽屉主实例挂在宿主会话（toolbox-host-*）下，其 useSessions 不响应浏览器 UI 切会话；
@@ -1471,8 +1643,6 @@ return {
         if (!el) return
         e.preventDefault()
         const act = el.getAttribute('data-action') || ''
-        // 抽屉本地动作（不进 RPC）：面板头部「↓ 最新」按钮，与右下角浮标同一跳转逻辑
-        if (act === 'jump-latest') { jumpToLatest(); return }
         loadPanel(active, act, el)
       }
 
@@ -1988,11 +2158,6 @@ return {
           html
             ? React.createElement('div', { dangerouslySetInnerHTML: { __html: html } })
             : React.createElement('div', { className: 'tb-notice' }, '加载面板…'),
-          showJump ? React.createElement('button', {
-            type: 'button',
-            className: 'tb-jump-latest',
-            onClick: jumpToLatest,
-          }, '↓ 回到最新') : null,
         )
       }
 

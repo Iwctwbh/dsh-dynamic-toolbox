@@ -93,7 +93,7 @@ return {
         }
 
         parts.push('</div>') // .tb-pane-head 结束
-        parts.push('<div class="tb-pane-body tb-pane-col"><div class="tb-list">' + rows.map((r) => {
+        parts.push('<div class="tb-pane-body tb-pane-col" data-scroll-default="bottom"><div class="tb-list">' + rows.map((r) => {
           const rp = ROLE_PILL[r.role]
           const pct = r.tok ? Math.max(2, Math.round((r.tok / maxTok) * 100)) : 0
           return '<div class="tb-rec' + (st.open === r.seq ? ' tb-rec-active' : '') + '" data-action="open" data-seq="' + r.seq + '">' +

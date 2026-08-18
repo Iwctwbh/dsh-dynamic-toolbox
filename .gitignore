@@ -11,3 +11,5 @@ node_modules/
 Thumbs.db
 Desktop.ini
 *.log
+# DSH 源码/安装副本（嵌套 Git 仓库，仅本地参考，勿入库）
+deepseek-harness/

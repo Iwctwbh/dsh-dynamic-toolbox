@@ -2,6 +2,8 @@
 
 > A session toolbox for [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness): 1 framework + 21 tool plugins as dynamic Cordis plugins · MIT License
 >
+> **v2026.08.18** — DSH rc.7 lifecycle hardening: zero-model-call autoboot, canonical multi-workspace isolation, streaming Flow cards with live timers/interruption settlement, session-following drawer fixes, and lifecycle-safe Client timers. See [release notes](RELEASE.md).
+>
 > 中文文档见下方 [中文 section](#中文文档)。
 
 ![工具箱抽屉 · 实时流程 Tab](docs/screenshot.png)
@@ -19,11 +21,11 @@ Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB
 - **Self-inspection**: selfview (screenshot / semantic snapshot / ui_* model tools)
 - **Bootstrap rebuild**: the framework auto-defines and starts all missing plugins from `plugins.json` on startup (idempotent, ~0.3s for all 22), honoring per-plugin enable memory
 - **Zero-model-call autoboot** (optional): `host-bootstrap/` auto-starts the framework on session open — 0 model calls, 1 approval click, any mode
-- **Contract smoke tests**: `node smoke.mjs` runs 14 simulation suites against real plugin impls with mocked ctx/services
+- **Contract smoke tests**: `node smoke.mjs` runs 19 simulation suites, including real rc.7 Cordis composition and multi-workspace isolation coverage
 
 ## Why dynamic (framework advantages)
 
-- **Session-owned, not process-global** — each session gets its own plugin set; stop or break one without touching the others (a static plugin is one process-wide instance)
+- **Workspace-isolated, process-multiplexed** — one process can host multiple repository toolboxes at once; registry, management actions and enable memory stay routed to the owning workspace
 - **Hot reload** — the implementation lives on disk behind a ~0.9KB stub: re-run to apply edits, no re-define, no re-approval, no process restart
 - **Approval gate kept** — browser code still asks once per process; nothing becomes unconditionally trusted at install time
 - **Immutable versions** — packages coexist; update flips a pointer, rollback is one call, a failed update never loses the working version
@@ -53,7 +55,7 @@ Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a 
 ```text
 1. pwsh host-bootstrap/install.ps1     # idempotent; uninstall with -Uninstall
 2. Restart DSH
-3. Open any session in any mode → first-time ask card → approve once
+3. Open any session in any mode → approve the Client card once
    → the framework auto-bootstraps all 22 plugins (selfview asks for one more approval)
 ```
 
@@ -76,6 +78,8 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 # 中文文档
 
 > DSH 工具箱（动态 Cordis 插件集）· MIT License
+
+> **v2026.08.18** — DSH rc.7 生命周期加固：零模型调用自举、canonical 多工作区隔离、Flow 流式助手卡/实时计时/中断收口、抽屉会话跟随修复，以及 Client Timer 生命周期化。完整说明见 [`RELEASE.md`](RELEASE.md)。
 
 > 运行在 DeepSeek Harness 上的会话级工具箱：1 个框架插件 + 21 个工具插件，
 > 全部以「磁盘加载桩」方式挂载——payload 是 ~0.9KB 的桩，实现全在磁盘，改代码重跑即生效。
@@ -113,7 +117,7 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 
 ## 框架优势（为什么全动态）
 
-- **会话级归属**：每个会话独立一份插件集，改砸/停掉互不影响（静态插件是进程全局单份）
+- **工作区隔离、进程内复用**：同一进程可并行承载多个仓库工具箱；注册表、管理操作和启停记忆均按所属工作区路由
 - **桩热重载**：实现全在磁盘、payload 仅 ~0.9KB 桩；点「重跑」即生效，不重启进程、不重新批准
 - **批准闸门保留**：浏览器代码每进程仍过一次手，不存在"安装即永久信任"
 - **不可变多版本**：Package 并存，update 切指针、失败不丢旧版、回滚一条命令

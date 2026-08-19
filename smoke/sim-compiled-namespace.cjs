@@ -23,8 +23,8 @@ const profileOf = (bundleId, label) => ({
   eventPrefix: 'tb-' + bundleId, slotPrefix: 'toolbox-' + bundleId,
   domId: bundleId, hostIdPrefix: 'toolbox-host-' + bundleId,
 })
-const PA = profileOf('flow', '流程')
-const PB = profileOf('flow-jira', '流程 + Jira 工具箱')
+const PA = profileOf('flow', '流镜')
+const PB = profileOf('flow-jira', '流镜 + Jira 工具箱')
 
 // ---------- Host 侧：两份 toolbox host.js 同进程 ----------
 const runHost = async (overrides, env) => {
@@ -55,7 +55,7 @@ const runHost = async (overrides, env) => {
   // registry 隔离：A 注册工具 → A 可见、B 不可见
   const regA = services[PA.registryService]
   regA.attach('r1')
-  regA.register({ id: 'flow', label: '流程', order: 1 }, async () => ({ html: '<b>A</b>' }))
+  regA.register({ id: 'flow', label: '流镜', order: 1 }, async () => ({ html: '<b>A</b>' }))
   check('A registry 注册后 tools 可见', regA.tools('r1').length === 1)
   check('B registry 看不到 A 的工具', services[PB.registryService].tools('r1').length === 0)
   const panA = await handlersA['toolbox.flow/panel']({ tool: 'flow' })
@@ -82,6 +82,7 @@ const runHost = async (overrides, env) => {
     setAttribute(k, v) { this.attrs[k] = String(v) },
     removeAttribute(k) { delete this.attrs[k] },
     hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) },
+    contains() { return false },
   }
   const mkEl = () => ({
     attrs: {}, children: [],
@@ -91,6 +92,7 @@ const runHost = async (overrides, env) => {
     getAttribute(k) { return this.hasAttribute(k) ? this.attrs[k] : null },
     addEventListener() {}, removeEventListener() {},
     remove() {}, insertBefore() {}, closest() { return null }, matches() { return false },
+    querySelector() { return null }, querySelectorAll() { return [] }, contains() { return false },
     parentElement: null, isConnected: false,
   })
   const mockDocument = { body, querySelector: () => null, querySelectorAll: () => [], createElement: () => mkEl() }

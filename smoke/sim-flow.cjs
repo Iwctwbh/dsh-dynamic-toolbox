@@ -81,7 +81,7 @@ const check = (label, cond, detail) => {
   if (!h) { console.log('FAIL | flow 未注册'); process.exit(1) }
 
   let r = await h({ action: '', fields: {}, state: null, root: ROOT, session: 's-main' })
-  check('打开 → 渲染主干', r.html.indexOf('实时流程') >= 0)
+  check('打开 → 渲染主干', r.html.indexOf('实时流镜') >= 0)
   check('自动刷新声明 data-autorefresh=2000', r.html.indexOf('data-autorefresh="2000"') >= 0)
   check('用户/助手消息节点', r.html.indexOf('帮我看下这个目录') >= 0 && r.html.indexOf('好的，我先并行读文件') >= 0)
   check('箭头连接符 ▼', r.html.indexOf('fl-arrow') >= 0 && r.html.indexOf('▼') >= 0)
@@ -121,7 +121,7 @@ const check = (label, cond, detail) => {
 
   // 静默刷新动作（__refresh 不报错）
   r = await h({ action: '__refresh', fields: {}, state: r.state, root: ROOT, session: 's-main' })
-  check('__refresh → 正常渲染', r.ok === true && r.html.indexOf('实时流程') >= 0)
+  check('__refresh → 正常渲染', r.ok === true && r.html.indexOf('实时流镜') >= 0)
 
   // 流式请求失败（已产生 chunk 但无最终 message）：草稿落定为中断，卡片与计时器停止运行态
   r = await h({ action: '', fields: {}, state: null, root: ROOT, session: 's-fail' })

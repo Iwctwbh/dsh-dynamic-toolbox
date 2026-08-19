@@ -1,4 +1,4 @@
-// ===== flow-tool.js：实时流程图（Host-only，经工具箱 RPC 注册）=====
+// ===== flow-tool.js：实时流镜（Host-only，经工具箱 RPC 注册）=====
 // 当前 session 在干什么 → 自上而下不断加载的流程图（与「轨迹」工具互补：轨迹是过滤时间线，流程图是形态视图）。
 // 形态约定（用户定制）：
 //   · 主 session：自上而下箭头串联 用户消息 → 助手 → 工具组 → 助手 …（最新在底部，滚动条贴底跟随）
@@ -497,7 +497,7 @@ return {
       const depth = drilled && Array.isArray(st.crumbs) ? st.crumbs.length : 0
       parts.push('<div class="tb-row">' +
         (drilled ? '<button type="button" class="tb-btn tb-btn-sm" data-action="fback" title="返回上一级流程图">← 返回</button>' : '') +
-        '<span class="tb-sec-label">' + (drilled ? '子代理流程' : '实时流程') + '</span>' +
+        '<span class="tb-sec-label">' + (drilled ? '子代理流镜' : '实时流镜') + '</span>' +
         '<span class="tb-note">' + esc(sid.replace(/^session-/, '').slice(0, 8)) + ' · ' + items.length + ' 条事件 · ' + nodes.length + ' 节点' + (drilled ? ' · 第 ' + (depth + 1) + ' 层' : '') + '</span>' +
         '<button type="button" class="tb-chip' + (st.live ? ' tb-chip-on' : '') + '" data-action="toggle-live">' + (st.live ? '● 实时同步中' : '⏸ 已暂停') + '</button>' +
         '<button type="button" class="tb-btn tb-btn-sm" data-action="refresh">刷新</button>' +
@@ -606,6 +606,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'flow', label: '流程', order: 2, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="5" height="4" rx="1"/><rect x="8.5" y="9.5" width="5" height="4" rx="1"/><path d="M5.5 6.5V8a3 3 0 0 0 3 3h.5"/><path d="M8 11.5l1.5-1L8 9.5"/></svg>' }, handler)
+    tryRegisterTool(ctx, { id: 'flow', label: '流镜', order: 2, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="5" height="4" rx="1"/><rect x="8.5" y="9.5" width="5" height="4" rx="1"/><path d="M5.5 6.5V8a3 3 0 0 0 3 3h.5"/><path d="M8 11.5l1.5-1L8 9.5"/></svg>' }, handler)
   },
 }

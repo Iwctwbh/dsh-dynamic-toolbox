@@ -1,4 +1,4 @@
-# Flowglass（dsh-flowglass）
+# Flowglass（流镜 · dsh-flowglass）
 
 > A DeepSeek Harness plugin: turn the current session into a **live flowgraph** — three lanes, subagent branches, parallel groups, drill-down — plus a hot-reloadable session toolbox in the same drawer. MIT License.
 >
@@ -6,7 +6,7 @@
 >
 > 中文文档见下方 [中文文档](#中文文档)。
 
-![实时流程 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
+![实时流镜 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
 
 Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB stub, the implementation lives on disk, so code edits take effect by simply re-running the plugin — no re-define, no re-approval.
 
@@ -113,9 +113,9 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 >
 > **v2026.08.18** — DSH rc.7 生命周期加固：零模型调用自举、canonical 多工作区隔离、Flow 流式助手卡/实时计时/中断收口、抽屉会话跟随修复，以及 Client Timer 生命周期化。
 
-![实时流程 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
+![实时流镜 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
 
-## 实时流程
+## 实时流镜
 
 抽屉默认 Tab，把**当前会话实时画成流程图**，每 2s 静默自刷（live 开关可暂停）：
 
@@ -127,7 +127,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 
 ## 工具箱
 
-流程之外，同一个抽屉承载 21 个热重载小工具（由框架插件统一承载：Host 注册表 + RPC、Client 抽屉/Tab/通用 HTML 面板壳 + `tb-` 设计系统）：
+流镜之外，同一个抽屉承载 21 个热重载小工具（由框架插件统一承载：Host 注册表 + RPC、Client 抽屉/Tab/通用 HTML 面板壳 + `tb-` 设计系统）：
 
 | 分组 | 工具 |
 | --- | --- |
@@ -149,7 +149,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 **方式 A · npm 安装编译包（推荐）**
 
 ```powershell
-dsh plugin --profile web add dsh-flowglass       # 仅流程（框架自动隐式加入）
+dsh plugin --profile web add dsh-flowglass       # 仅流镜（框架自动隐式加入）
 dsh plugin --profile web add dsh-dynamic-toolbox  # 完整工具箱
 # 升级：dsh plugin --profile web add dsh-flowglass@<新版本> 然后重启 DSH
 ```

@@ -51,7 +51,7 @@
     },
     {
       "id": "flow",
-      "name": "实时流程图 (Host-only)",
+      "name": "实时流镜 (Host-only)",
       "payload": "plugins/flow/payload.json",
       "platform": "host-only",
       "approval": false,

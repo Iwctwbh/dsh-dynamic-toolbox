@@ -1,0 +1,21 @@
+{
+  "version": 3,
+  "mode": "native-static",
+  "bundle": "flow",
+  "plugins": [
+    {
+      "id": "toolbox",
+      "name": "工具箱框架 (Host 注册表 + Client 面板壳)",
+      "platform": "host+client",
+      "order": 1,
+      "purpose": "工具箱框架：Host 半维护工具注册表并提供 toolbox/tools、toolbox/panel RPC；Client 半提供抽屉 + Tab 栏 + 通用 HTML 面板壳（唯一需要浏览器批准的新架构插件）"
+    },
+    {
+      "id": "flow",
+      "name": "实时流镜 (Host-only)",
+      "platform": "host-only",
+      "order": 5,
+      "purpose": "Host-only：当前 session 实时流程图——自上而下箭头主干（用户/助手/工具组），子代理 git 树分支（├─ 支线实时展开子会话步骤 ╰─ 合并），同步普通调用平行卡片；面板带 data-autorefresh=2000，框架每 2s 静默重拉；makeSessionLogReader 按会话缓存"
+    }
+  ]
+}

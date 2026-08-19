@@ -1,0 +1,147 @@
+{
+  "version": 3,
+  "mode": "native-static",
+  "bundle": "dynamic-toolbox",
+  "plugins": [
+    {
+      "id": "toolbox",
+      "name": "工具箱框架 (Host 注册表 + Client 面板壳)",
+      "platform": "host+client",
+      "order": 1,
+      "purpose": "工具箱框架：Host 半维护工具注册表并提供 toolbox/tools、toolbox/panel RPC；Client 半提供抽屉 + Tab 栏 + 通用 HTML 面板壳（唯一需要浏览器批准的新架构插件）"
+    },
+    {
+      "id": "jira",
+      "name": "Jira 需求读取与归档工具 (Host-only)",
+      "platform": "host-only",
+      "order": 2,
+      "purpose": "Host-only：Jira 查询/附件归档/记录管理动作机 + HTML 面板渲染，凭据走 credentials 服务、HTTP 走 node 子进程，经工具箱 RPC 注册；记录落盘 .dsh-dynamic-toolbox/jira-watch.json"
+    },
+    {
+      "id": "git",
+      "name": "Git 历史工具 (Host-only)",
+      "platform": "host-only",
+      "order": 3,
+      "purpose": "Host-only：subprocess spawn git 的 status/history/commit/diff 动作机 + HTML 面板渲染（list/detail/diff 三视图）；变更清单点击文件看工作区/暂存区 diff（未暂存优先，未跟踪走 --no-index）；status 用 porcelain -z（中文路径零转义），diff 按 rev-parse --show-toplevel 解析（工作区是子目录也对得上），经工具箱 RPC 注册"
+    },
+    {
+      "id": "files",
+      "name": "工作区文件工具 (Host-only)",
+      "platform": "host-only",
+      "order": 4,
+      "purpose": "Host-only：fs 服务列目录 + 文件夹树 HTML 渲染（展开/折叠/刷新），经工具箱 RPC 注册"
+    },
+    {
+      "id": "flow",
+      "name": "实时流镜 (Host-only)",
+      "platform": "host-only",
+      "order": 5,
+      "purpose": "Host-only：当前 session 实时流程图——自上而下箭头主干（用户/助手/工具组），子代理 git 树分支（├─ 支线实时展开子会话步骤 ╰─ 合并），同步普通调用平行卡片；面板带 data-autorefresh=2000，框架每 2s 静默重拉；makeSessionLogReader 按会话缓存"
+    },
+    {
+      "id": "flowedit",
+      "name": "工作流编辑器 (Host-only)",
+      "platform": "host-only",
+      "order": 5,
+      "purpose": "Host-only：Markdown 优先的工作流编辑（参考 dsh-deepseek-flow）——## 步骤 / ### gate:ifElse 等 8 类逻辑门 / - 是→目标 分支，编辑区 ↔ 流程图实时双向预览（git 树分支样式复用 fl- 族）；文件落盘 .dsh-dynamic-toolbox/data/flows/<name>.md"
+    },
+    {
+      "id": "theme-teal",
+      "name": "工具箱主题 · 青绿（演示）",
+      "platform": "client-only",
+      "order": 5,
+      "purpose": "工具箱面板主题插件（演示）：在 :root 声明 --tb-* 变量覆盖，把共享设计系统的 accent 从蓝色换成青绿；停止即回默认主题，用于验证\"多主题插件按需激活\"机制"
+    },
+    {
+      "id": "trace",
+      "name": "会话轨迹工具 (Host-only)",
+      "platform": "host-only",
+      "order": 6,
+      "purpose": "Host-only：sessionQuery 读当前会话日志（makeSessionLogReader 缓存），技能/插件/MCP/子代理/命令(pwsh/bash/终端，默认勾选)/内置 多选过滤时间线 + 点击条目完整输入输出；固定头 + 时间线独立滚动（column-reverse 最新在底）"
+    },
+    {
+      "id": "http",
+      "name": "HTTP 接口调试工具 (Host-only)",
+      "platform": "host-only",
+      "order": 7,
+      "purpose": "Host-only：Postman 风格接口调试——method 芯片 + URL + Params/Headers 键值对编辑（启用/增删）+ Body 类型（none/JSON/raw/form，自动 Content-Type）+ 响应 JSON 美化 + 历史快照重发；落盘 .dsh-dynamic-toolbox/toolbox-http.json"
+    },
+    {
+      "id": "ports",
+      "name": "端口进程查看工具 (Host-only)",
+      "platform": "host-only",
+      "order": 8,
+      "purpose": "Host-only：node 子进程 spawnSync netstat/tasklist 列监听端口 + 进程名，过滤/刷新/两步确认 taskkill 结束进程，经工具箱 RPC 注册"
+    },
+    {
+      "id": "calc",
+      "name": "计算台（编解码/正则/Cron/文本对比/生成器 5 合一）",
+      "platform": "host-only",
+      "order": 9,
+      "purpose": "Host-only：codec/regex/cron/txtdiff/gen 五个纯计算小工具合一的单 Tab「计算」，子模式芯片切换（Base64/URL/JSON/时间戳编解码、正则匹配替换、5 段 cron 解析、行级 LCS 文本对比、UUID/随机串/哈希），消除零散小 Tab 的突兀感"
+    },
+    {
+      "id": "usage",
+      "name": "会话 Token 用量分析 (Host-only)",
+      "platform": "host-only",
+      "order": 11,
+      "purpose": "Host-only：当前会话 assistant/message usage 汇总（总输入/输出/缓存命中率/平均每步）+ Top10 步骤条形图 + 最近 20 步明细；makeSessionLogReader 缓存"
+    },
+    {
+      "id": "prompt",
+      "name": "系统提示词装配查看 (Host-only)",
+      "platform": "host-only",
+      "order": 12,
+      "purpose": "Host-only：systemPrompt.assemble 全局装配的 sections/contexts/tools/variables 清单，点击展开完整文本；固定头 + 列表独立滚动"
+    },
+    {
+      "id": "context",
+      "name": "当前上下文窗口查看 (Host-only)",
+      "platform": "host-only",
+      "order": 13,
+      "purpose": "Host-only：sessionQuery.readSurface 当前模型可见上下文条目 + tokenMeter 逐条 token 估算，点击展开完整内容；固定头 + 列表独立滚动"
+    },
+    {
+      "id": "aiassist",
+      "name": "AI 助手（问答/翻译/优化/评审/提交信息/摘要/对比 7 合一）",
+      "platform": "host-only",
+      "order": 14,
+      "purpose": "Host-only：原 ask/translate/promptopt/review/commitmsg/aisummary/compare 七个 AI 工具合一的单 Tab「AI 助手」，PRESETS 表 + 通用 handler，preset 芯片切换（含 compare 多模型并发 mode），切换 prompt/system 即切换用途；沿用原 toolbox-*.json 落盘文件与台账 tool 键（历史与用量无缝连续）"
+    },
+    {
+      "id": "tools",
+      "name": "可用工具清单 (Host-only)",
+      "platform": "host-only",
+      "order": 15,
+      "purpose": "Host-only：tools.schemas（空则退回 systemPrompt 装配）模型可见工具清单，搜索过滤 + 完整参数 schema 展开"
+    },
+    {
+      "id": "search",
+      "name": "会话全文搜索 (Host-only)",
+      "platform": "host-only",
+      "order": 16,
+      "purpose": "Host-only：sessionQuery.searchEvents 当前会话全文检索（snippet 命中列表 + readEvent 原文定位），与结构化轨迹互补；回车即搜"
+    },
+    {
+      "id": "lineage",
+      "name": "会话血缘树 (Host-only)",
+      "platform": "host-only",
+      "order": 17,
+      "purpose": "Host-only：sessionQuery.traceSession 祖先链 + 子代理后代树（递归缩进），live/persisted/subagent 徽章，断链提示"
+    },
+    {
+      "id": "aiusage",
+      "name": "AI 旁路调用台账 (Host-only)",
+      "platform": "host-only",
+      "order": 24,
+      "purpose": "Host-only：读 .dsh-dynamic-toolbox/toolbox-ai-usage.json（AI 工具旁路调用台账，cap 100）——总计/今日统计 + 按工具聚合条形图 + 最近 20 条明细 + 两步确认清空；与「用量」（会话日志口径）互补"
+    },
+    {
+      "id": "quota",
+      "name": "API 配额查询 (Host-only)",
+      "platform": "host-only",
+      "order": 25,
+      "purpose": "Host-only：查 Kimi for Coding（k3）套餐余量（周主额度 + 5h 滑动窗口 + 并发），GET /coding/v1/usages，Key 走 环境变量→~/.dsh/.credentials.yaml 凭据链，Node 子进程 https（沙箱内 curl 走 schannel 被拒、Node 走 TUN 可直连）；脱敏渲染，key 不出子进程"
+    }
+  ]
+}

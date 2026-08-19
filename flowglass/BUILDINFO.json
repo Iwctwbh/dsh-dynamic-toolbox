@@ -1,0 +1,51 @@
+{
+  "bundleId": "flow",
+  "packageName": "dsh-flowglass",
+  "version": "0.2.0",
+  "displayName": "流镜",
+  "mode": "native-static",
+  "dynamicApprovalRequired": false,
+  "features": {
+    "explicit": [
+      "flow"
+    ],
+    "dependencyAdded": [],
+    "all": [
+      "toolbox",
+      "flow"
+    ]
+  },
+  "fingerprint": "bdd153f30f5dee01",
+  "builderVersion": "2",
+  "sourceHashes": {
+    "plugins/flow/tool.js": "e95b6c081dc228f22a01d1601b93ea2769114241a447e8e9db010430397ac80a",
+    "plugins/toolbox/client.js": "321bf6e8d0537eb9c5dc831318b32790568ca7aa1af1228273bdf24927fb2bbb",
+    "plugins/toolbox/host.js": "d55d8b8075bb4cb15bd333fbbb023b1198755ba3fab5d3bb26c9f1781dfd1276",
+    "shared/host.js": "6d1c857b8c0fc9cbcc5c3716dd581a8e761e4306a474a89271cf49d0762675f3",
+    "shared/runtime.js": "75a6fc739f9e2e018d61c4ace46b24fbe9af8648ec24b549f4e84d2c68f375a5"
+  },
+  "profile": {
+    "mode": "static-bundle",
+    "bundleId": "flow",
+    "displayName": "流镜",
+    "registryService": "toolboxRegistryFlow",
+    "artifactService": "toolboxArtifactsFlow",
+    "remoteService": "toolboxNativeFlow",
+    "remoteNamespace": "toolboxNativeFlow",
+    "rpcPrefix": "toolbox.flow",
+    "storagePrefix": "dsh.toolbox.flow",
+    "eventPrefix": "tb-flow",
+    "slotPrefix": "toolbox-flow",
+    "domId": "flow",
+    "hostIdPrefix": "toolbox-host-flow",
+    "dataDir": ".dsh-dynamic-toolbox",
+    "capabilities": {
+      "diskReload": false,
+      "rebuildFromDisk": false,
+      "pluginDefaults": false,
+      "pluginRestart": false,
+      "aiUsage": false,
+      "managePlugins": false
+    }
+  }
+}

@@ -44,9 +44,9 @@ Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a 
 **Path A · compiled bundle from npm (recommended)**
 
 ```powershell
-dsh plugin --profile web add dsh-flow-toolbox     # Flow-only (framework is implicit)
-dsh plugin --profile web add dsh-flow-jira-toolbox # Flow + Jira
-# upgrade: dsh plugin --profile web add dsh-flow-toolbox@<new-version> && restart DSH
+dsh plugin --profile web add dsh-flowglass        # Flow-only (framework is implicit)
+dsh plugin --profile web add dsh-dynamic-toolbox   # the full toolbox
+# upgrade: dsh plugin --profile web add dsh-flowglass@<new-version> && restart DSH
 ```
 
 Compiled bundles are native static Host/Client packages: no dynamic approval, no `dyn/*`, Services/RPC/Slots/DOM/storage/events namespaced by bundleId. They don't hot-reload from disk — upgrade = add the new version + restart DSH.
@@ -149,9 +149,9 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 **方式 A · npm 安装编译包（推荐）**
 
 ```powershell
-dsh plugin --profile web add dsh-flow-toolbox      # 仅流程（框架自动隐式加入）
-dsh plugin --profile web add dsh-flow-jira-toolbox # 流程 + Jira
-# 升级：dsh plugin --profile web add dsh-flow-toolbox@<新版本> 然后重启 DSH
+dsh plugin --profile web add dsh-flowglass       # 仅流程（框架自动隐式加入）
+dsh plugin --profile web add dsh-dynamic-toolbox  # 完整工具箱
+# 升级：dsh plugin --profile web add dsh-flowglass@<新版本> 然后重启 DSH
 ```
 
 编译包是原生静态 Host/Client 包：无动态批准、无 `dyn/*`，Service/RPC/Slot/DOM/storage/事件按 bundleId 隔离；不热重载——升级 = add 新版本 + 重启 DSH。

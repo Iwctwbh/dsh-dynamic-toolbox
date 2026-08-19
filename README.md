@@ -35,7 +35,7 @@ The same drawer hosts 21 hot-reloadable mini-tools on top of a shared framework 
 
 - **Bootstrap rebuild** — the framework auto-defines and starts all missing plugins from `plugins.json` on startup (idempotent, ~0.3s for all 22), honoring per-plugin enable memory
 - **Zero-model-call autoboot** (optional): `host-bootstrap/` auto-starts the framework on session open — 0 model calls, 1 approval click, any mode
-- **Contract smoke tests**: `node smoke.mjs` runs 19 simulation suites, including real rc.7 Cordis composition and multi-workspace isolation coverage
+- **Contract smoke tests**: `node smoke.mjs` runs 21 simulation suites, including real rc.7 Cordis composition and multi-workspace isolation coverage
 
 ## Install
 

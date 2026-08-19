@@ -835,10 +835,13 @@ return {
       // 原则：主抽屉 React 树是唯一事实源；pip 窗口显示其 DOM 克隆（MutationObserver debounce 同步），
       // 交互事件按索引路径代理回主 DOM 触发——两种模式显示与行为完全一致；
       // 主抽屉全程照常运行（轮询/状态不受影响）；pip 未开启时零开销、零影响。
+      // ⚠️ 整体禁用开关：所有情况下都不渲染画中画按钮、不开启 PiP 窗口（当前为 false，
+      // 已按需求把所有情况下的画中画都关掉）；恢复时改回 true 即可，其余逻辑无需变动。
+      const PIP_ENABLED = false
       const pipRef = React.useRef(null) // { win, mo, syncTimer, themeOff, enlarged, baseW, baseH } | null
       const [pipOn, setPipOn] = React.useState(false)
       const [mainHidden, setMainHidden] = React.useState(false) // pip 期间主抽屉可视觉隐藏（DOM 存活：镜像源与轮询不断）
-      const pipSupported = typeof window !== 'undefined' && Boolean(window.documentPictureInPicture)
+      const pipSupported = PIP_ENABLED && typeof window !== 'undefined' && Boolean(window.documentPictureInPicture)
       const closePip = () => {
         const cur = pipRef.current
         pipRef.current = null
@@ -2333,7 +2336,9 @@ return {
           dockButton,
           closeButton,
         ),
-        managing ? null : React.createElement('div', { className: 'tb-nav' },
+        // 只有一个工具时整条导航无意义：隐藏搜索工具栏/分类行/Tab 栏，抽屉退化为纯面板；
+        // 对所有停靠形态（浮动/右停靠/全占/PiP 镜像）都走同一 Drawer 渲染，天然全部生效。
+        managing || tools.length === 1 ? null : React.createElement('div', { className: 'tb-nav' },
           React.createElement('input', {
             className: 'tb-input tb-nav-search',
             placeholder: '搜索工具（共 ' + tools.length + ' 个，匹配名称 / ID）',

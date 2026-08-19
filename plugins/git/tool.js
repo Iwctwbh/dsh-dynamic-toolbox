@@ -301,6 +301,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'git', label: 'Git 历史', order: 1 }, handler)
+    tryRegisterTool(ctx, { id: 'git', label: 'Git 历史', order: 1, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="4" r="1.7"/><circle cx="12" cy="4" r="1.7"/><circle cx="12" cy="12" r="1.7"/><path d="M5.7 4H10.3"/><path d="M12 5.7V10.3"/></svg>' }, handler)
   },
 }

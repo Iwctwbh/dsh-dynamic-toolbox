@@ -123,6 +123,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'prompt', label: '提示词', order: 9 }, handler)
+    tryRegisterTool(ctx, { id: 'prompt', label: '提示词', order: 9, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6.5h6M5 9h4"/></svg>' }, handler)
   },
 }

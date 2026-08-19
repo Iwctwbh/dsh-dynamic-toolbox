@@ -320,6 +320,6 @@ return {
       return { ok: true, html: render(st), state: st }
     }
 
-    tryRegisterTool(ctx, { id: 'flowedit', label: '工作流', order: 5 }, handler)
+    tryRegisterTool(ctx, { id: 'flowedit', label: '工作流', order: 5, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5-7 7H4v-2.5z"/><path d="M3.5 12.5h9"/></svg>' }, handler)
   },
 }

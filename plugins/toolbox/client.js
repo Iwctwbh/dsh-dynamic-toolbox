@@ -607,6 +607,14 @@ return {
     // 无 DOM 环境（headless）退回官方 Slot 兜底。
     const NAV_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="12" height="8.5" rx="1.5"/><path d="M5.5 5V3.8A1.3 1.3 0 0 1 6.8 2.5h2.4A1.3 1.3 0 0 1 10.5 3.8V5"/><path d="M2 8.2h12"/></svg>'
     const NAV_FAMILY_SEL = '[data-dsh-taskboard-entry], [data-dsh-ssh-entry], [data-dsh-toolbox-entry]'
+    // 侧边栏入口图标引用（mountSidebarEntry 注入后绑定；无 DOM 环境走 Slot 兜底无图标，保持 null）。
+    // Drawer 在只剩一个工具时经 replaceSidebarIcon 把工具箱图标临时换成该工具的图标。
+    // desiredSidebarIcon 记录「最近希望显示的图标」：入口绑定晚于 Drawer effect 时，绑定后补刷一次，
+    // 顺序无关（先想显示后绑定 / 先绑定后想显示都收敛到同一结果）。
+    let sidebarIconEl = null
+    let desiredSidebarIcon = NAV_ICON
+    const applySidebarIcon = () => { if (sidebarIconEl) { try { sidebarIconEl.innerHTML = desiredSidebarIcon } catch (e) {} } }
+    const replaceSidebarIcon = (html) => { desiredSidebarIcon = html || NAV_ICON; applySidebarIcon() }
 
     function mountSidebarEntry() {
       function sidebarRoot() {
@@ -643,6 +651,9 @@ return {
       entry.setAttribute('title', RT.displayName)
       const safeLabel = String(RT.displayName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       entry.innerHTML = '<span class="tb-nav-icon">' + NAV_ICON + '</span><span class="tb-nav-label">' + safeLabel + '</span>'
+      const iconEl = entry.querySelector('.tb-nav-icon') // 单工具时替换此图标为工具图标
+      sidebarIconEl = iconEl
+      applySidebarIcon() // 补刷：Drawer 可能已在图标绑定前记录过单工具意图
       entry.addEventListener('click', () => store.toggle())
 
       let root
@@ -680,6 +691,7 @@ return {
         waitObserver.disconnect()
         rootObserver.disconnect()
         unsubscribe()
+        if (sidebarIconEl === iconEl) sidebarIconEl = null
         entry.remove()
       }
     }
@@ -1749,6 +1761,15 @@ return {
         refreshPlugins()
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [currentCwd, currentSessionId])
+
+      // 单工具图标替换：只剩一个非工具箱工具时，侧边栏入口的「工具箱」图标换成该工具的图标；
+      // 多工具 / 管理视图恢复工具箱图标。（图标随注册表下发，此项只消费 tools 的 icon 字段，平日不显示）
+      React.useEffect(() => {
+        const solo = !managing && tools.length === 1 && tools[0] && tools[0].icon
+          ? tools[0].icon : null
+        replaceSidebarIcon(solo || NAV_ICON)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [tools, managing])
 
       // 面板自动刷新：当前工具的 HTML 声明了 data-autorefresh="ms" 时，静默轮询（不转圈、不抢滚动——silent 路径）
       const curAutoMs = active ? autoMs[active] : undefined

@@ -29,7 +29,7 @@ const tryRegisterTool = (ctx, desc, handler) => {
     if (reg === regSeen && off) return
     if (off) { try { off() } catch (e) {} off = null }
     try {
-      const d = reg.register({ id: desc.id, label: desc.label, order: desc.order }, handler)
+      const d = reg.register({ id: desc.id, label: desc.label, order: desc.order, icon: desc.icon || null }, handler)
       off = () => { try { d() } catch (e) {} }
       regSeen = reg
     } catch (e) {}

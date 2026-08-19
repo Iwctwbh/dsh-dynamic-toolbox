@@ -119,6 +119,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'usage', label: '用量', order: 8 }, handler)
+    tryRegisterTool(ctx, { id: 'usage', label: '用量', order: 8, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4.5 10v3.5M8 7v6.5M11.5 9v4.5"/></svg>' }, handler)
   },
 }

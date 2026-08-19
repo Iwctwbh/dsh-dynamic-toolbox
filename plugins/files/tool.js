@@ -151,6 +151,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'files', label: '文件', order: 2 }, handler)
+    tryRegisterTool(ctx, { id: 'files', label: '文件', order: 2, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5a1.5 1.5 0 0 1 1.5-1.5h3L8.5 6h4A1.5 1.5 0 0 1 14 7.5v3a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 10.5z"/></svg>' }, handler)
   },
 }

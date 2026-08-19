@@ -692,6 +692,6 @@ return {
       return out
     }
 
-    tryRegisterTool(ctx, { id: 'calc', label: '计算', order: 8 }, handler)
+    tryRegisterTool(ctx, { id: 'calc', label: '计算', order: 8, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="10" height="11" rx="1.5"/><path d="M5.5 5.5h5"/><path d="M6 8h.01M8 8h.01M10 8h.01M6 10.5h.01M8 10.5h.01M10 10.5h.01"/></svg>' }, handler)
   },
 }

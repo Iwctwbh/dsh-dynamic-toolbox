@@ -315,6 +315,6 @@ return {
       return out
     }
 
-    tryRegisterTool(ctx, { id: 'http', label: 'HTTP', order: 4 }, handler)
+    tryRegisterTool(ctx, { id: 'http', label: 'HTTP', order: 4, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h9"/><path d="M8 4.5L11.5 8 8 11.5"/><circle cx="13.5" cy="8" r="1.2"/></svg>' }, handler)
   },
 }

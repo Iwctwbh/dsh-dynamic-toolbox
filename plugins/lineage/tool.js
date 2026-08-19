@@ -96,6 +96,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'lineage', label: '谱系', order: 14 }, handler)
+    tryRegisterTool(ctx, { id: 'lineage', label: '谱系', order: 14, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="3.5" r="1.6"/><circle cx="3.5" cy="12.5" r="1.6"/><circle cx="12.5" cy="12.5" r="1.6"/><path d="M8 5.1v.9a2 2 0 0 1-2 2H5.4"/><path d="M9.5 6.4h.6a2 2 0 0 1 2 2v1.6"/></svg>' }, handler)
   },
 }

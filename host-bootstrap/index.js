@@ -48,7 +48,7 @@ const makeRegistry = () => {
     if (!desc || typeof desc.id !== 'string' || !desc.id || typeof handler !== 'function') return () => {}
     const t = tableOf(buildRoot || lastRoot)
     if (!t) return () => {}
-    const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, handler }
+    const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, icon: desc.icon || null, handler }
     t.set(desc.id, entry)
     return () => { if (t.get(desc.id) === entry) t.delete(desc.id) }
   }
@@ -67,7 +67,7 @@ const makeRegistry = () => {
     tools(root) {
       const t = tables.get(root || lastRoot) || new Map()
       return [...t.values()].sort((a, b) => a.order - b.order)
-        .map((x) => ({ id: x.id, label: x.label, order: x.order }))
+        .map((x) => ({ id: x.id, label: x.label, order: x.order, icon: x.icon || null }))
     },
     async panel(root, call) {
       const t = tables.get(root || lastRoot)

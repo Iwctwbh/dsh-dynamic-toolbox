@@ -490,6 +490,6 @@ return {
       return out
     }
 
-    tryRegisterTool(ctx, { id: 'aiassist', label: 'AI 助手', order: 11 }, handler)
+    tryRegisterTool(ctx, { id: 'aiassist', label: 'AI 助手', order: 11, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l1.4 2.8 3.1.45-2.25 2.2.5 3.1-2.75-1.45-2.75 1.45.5-3.1-2.25-2.2 3.1-.45z"/><circle cx="13" cy="13" r="1.2"/></svg>' }, handler)
   },
 }

@@ -148,6 +148,6 @@ return {
       return { ok: true, html: parts.join(''), state: st }
     }
 
-    tryRegisterTool(ctx, { id: 'search', label: '搜索', order: 13 }, handler)
+    tryRegisterTool(ctx, { id: 'search', label: '搜索', order: 13, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L14 14"/></svg>' }, handler)
   },
 }

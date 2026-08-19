@@ -25,12 +25,12 @@ const makeStaticRegistry = () => {
   return {
     register(desc, handler) {
       if (!desc || typeof desc.id !== 'string' || !desc.id || typeof handler !== 'function') return () => {}
-      const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, handler }
+      const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, icon: desc.icon || null, handler }
       entries.set(desc.id, entry)
       return () => { if (entries.get(desc.id) === entry) entries.delete(desc.id) }
     },
     tools() {
-      return [...entries.values()].sort((a, b) => a.order - b.order).map((x) => ({ id: x.id, label: x.label, order: x.order }))
+      return [...entries.values()].sort((a, b) => a.order - b.order).map((x) => ({ id: x.id, label: x.label, order: x.order, icon: x.icon || null }))
     },
     async panel(root, call) {
       const toolId = call && typeof call.tool === 'string' ? call.tool : ''

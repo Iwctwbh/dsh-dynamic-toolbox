@@ -83,6 +83,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'tools', label: '工具', order: 12 }, handler)
+    tryRegisterTool(ctx, { id: 'tools', label: '工具', order: 12, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg>' }, handler)
   },
 }

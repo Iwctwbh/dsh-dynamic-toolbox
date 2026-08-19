@@ -414,6 +414,6 @@ return {
       }
     }
 
-    tryRegisterTool(ctx, { id: 'trace', label: '轨迹', order: 3 }, handler)
+    tryRegisterTool(ctx, { id: 'trace', label: '轨迹', order: 3, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8"/><path d="M8 2.5V8l3.5 2"/></svg>' }, handler)
   },
 }

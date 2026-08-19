@@ -131,6 +131,6 @@ return {
       return { ok: true, html: render(st), state: st }
     }
 
-    tryRegisterTool(ctx, { id: 'ports', label: '端口', order: 5 }, handler)
+    tryRegisterTool(ctx, { id: 'ports', label: '端口', order: 5, icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2v3M11 2v3"/><path d="M4.5 5h7v2a3.5 3.5 0 0 1-7 0z"/><path d="M8 10.5V14"/></svg>' }, handler)
   },
 }

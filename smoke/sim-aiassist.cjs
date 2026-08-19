@@ -87,7 +87,7 @@ const check = (label, cond, detail) => {
 }
 
 ;(async () => {
-  const src = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
+  const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(ctx, undefined, console)
   await plugin.apply(ctx)
   const h = handlers.aiassist
@@ -136,7 +136,7 @@ const check = (label, cond, detail) => {
     const hs = {}
     const c2 = Object.create(ctx)
     c2.get = (name) => (name === 'toolboxRegistry' ? { register(d, hh) { hs[d.id] = hh; return () => {} } } : ctx.get(name))
-    const src2 = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
+    const src2 = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
     const p2 = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src2 + '\n})()')(c2, undefined, console)
     await p2.apply(c2)
     return hs.aiassist
@@ -178,7 +178,7 @@ const check = (label, cond, detail) => {
     if (name === 'toolboxRegistry') return { register(d, hh) { hsN[d.id] = hh; return () => {} } }
     return ctx.get(name)
   }
-  const srcNo = read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
+  const srcNo = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/aiassist/tool.js')
   const pNo = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + srcNo + '\n})()')(ctxNoLlm, undefined, console)
   await pNo.apply(ctxNoLlm)
   const hN = hsN.aiassist

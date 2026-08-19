@@ -141,7 +141,7 @@ const evalClient = (src, extra) => {
 const tick = () => new Promise((r) => setTimeout(r, 15))
 
 ;(async () => {
-  const src = read('plugins/toolbox/client.js')
+  const src = read('shared/runtime.js') + '\n' + read('plugins/toolbox/client.js')
 
   // 静态断言：双路径都在（DOM 主 + Slot 兜底）
   check('源码含导航区 DOM 注入主路径', src.indexOf('function mountSidebarEntry()') >= 0 && src.indexOf('data-dsh-toolbox-entry') >= 0)
@@ -276,7 +276,7 @@ const tick = () => new Promise((r) => setTimeout(r, 15))
     check('CSS 含导航条目选择器', css.indexOf('[data-dsh-toolbox-entry]{') >= 0 && css.indexOf('.tb-nav-icon') >= 0)
     check('CSS 含折叠 rail 变体', css.indexOf('[data-dsh-frame][data-sidebar-collapsed] [data-dsh-toolbox-entry]') >= 0)
     check('CSS 含 .tb-entry 与 .jr-drawer', css.indexOf('.tb-entry{') >= 0 && css.indexOf('.jr-drawer{') >= 0)
-    check('CSS 含隐藏行与计数覆盖规则', css.indexOf('li[data-cordis-row][data-tb-hide]{display:none!important}') >= 0
+    check('CSS 含隐藏行与计数覆盖规则', css.indexOf('li[data-cordis-row][data-tb-hide~="1"]{display:none!important}') >= 0
       && css.indexOf('button[data-cordis-badge] span[data-tb-count]::after') >= 0)
   }
 

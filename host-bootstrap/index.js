@@ -31,8 +31,8 @@ export function apply(ctx) {
   })
 }
 
-// 与 plugins/toolbox/host.js 的 makeRegistry 保持同一契约（host.js 保留兜底分支）；
-// root → 工具表；build 用锁式 runInBuild(root, fn)：整个异步段持锁，段内 register 归 root。
+// 与 shared/registry.js 保持同一契约同一实现（本静态插件无法读仓库文件，保留同步副本；
+// 改契约须两边同步）。root → 工具表；build 用锁式 runInBuild(root, fn)：整个异步段持锁，段内 register 归 root。
 const makeRegistry = () => {
   const tables = new Map() // root -> Map<id, entry>
   let buildRoot = null
@@ -54,6 +54,7 @@ const makeRegistry = () => {
   }
   return {
     attach(root) { if (!root) return; lastRoot = root; tableOf(root) },
+    detach(root) { if (root) tables.delete(root) },
     register,
     async runInBuild(root, fn) {
       const prev = lock
@@ -68,9 +69,6 @@ const makeRegistry = () => {
       return [...t.values()].sort((a, b) => a.order - b.order)
         .map((x) => ({ id: x.id, label: x.label, order: x.order }))
     },
-    // 与 plugins/toolbox/host.js 的 makeRegistry 保持同一契约：全局 multiplex 注册表在
-    // bootstrapper 首份 provide，框架复用——panel 缺失会让框架的 toolbox/panel RPC 报
-    // "registry.panel is not a function"（v6.3 引全局注册表时漏抄的方法）。
     async panel(root, call) {
       const t = tables.get(root || lastRoot)
       const toolId = call && typeof call.tool === 'string' ? call.tool : ''
@@ -92,6 +90,7 @@ const makeRegistry = () => {
     },
     has(root) { return root ? tables.has(root) : false },
     roots() { return [...tables.keys()] },
+    clear() { tables.clear(); buildRoot = null; lastRoot = null },
   }
 }
 

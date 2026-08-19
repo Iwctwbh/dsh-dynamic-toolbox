@@ -1,23 +1,32 @@
 // ===== toolbox-client.js：工具箱框架 Client 半 — 抽屉 + Tab 栏 + 通用 HTML 面板壳 =====
-// 工具列表经 host.call('toolbox/tools') 轮询（1.5s，抽屉打开时）；
-// 面板内容经 host.call('toolbox/panel') 获取 HTML 片段 + 状态回传；
+// 工具列表经 host.call(RT.rpc('tools')) 轮询（1.5s，抽屉打开时）；
+// 面板内容经 host.call(RT.rpc('panel')) 获取 HTML 片段 + 状态回传；
 // 面板内交互：点击 [data-action]，表单输入收集 [data-field] 一并回传。
 
 return {
   name: 'toolbox',
   inject: ['timer'],
   apply(ctx) {
-    // 进程级单例（工作区级）：页面已有主实例的抽屉时，本会话 Client 半空转——避免重复注册
-    // sidebar.footer.action / shell.overlay 造成双抽屉。标记随 fiber 卸载清理；主实例停止后
-    // 重新运行本插件即可重新成为主实例。
+    // ===== 命名空间（TOOLBOX_RUNTIME 由拼接的 shared/runtime.js 提供；动态默认=历史名称）=====
+    const RT = TOOLBOX_RUNTIME
+    // 进程级单例（bundle 级）：页面已有本 bundle 主实例的抽屉时，本会话 Client 半空转——避免重复注册
+    // sidebar.footer.action / shell.overlay 造成双抽屉。marker 值为空格分隔的 bundleId 列表
+    // （多 bundle 同进程各挂各的抽屉，互不抢占）；标记随 fiber 卸载只移除自己那一份。
+    const myDomId = RT.domMountedValue()
     if (typeof document !== 'undefined' && document.body) {
-      if (document.body.hasAttribute('data-dsh-toolbox-mounted')) {
-        console.log('toolbox: 页面已存在工具箱抽屉（另一会话的主实例），本会话 Client 半跳过')
+      const cur = (document.body.getAttribute('data-dsh-toolbox-mounted') || '').split(/\s+/).filter(Boolean)
+      if (cur.indexOf(myDomId) >= 0) {
+        console.log('toolbox: 页面已存在本工具箱抽屉（另一会话的主实例），本会话 Client 半跳过')
         return
       }
-      document.body.setAttribute('data-dsh-toolbox-mounted', '1')
+      document.body.setAttribute('data-dsh-toolbox-mounted', cur.concat([myDomId]).join(' '))
       ctx.effect(() => () => {
-        try { if (document.body) document.body.removeAttribute('data-dsh-toolbox-mounted') } catch (e) {}
+        try {
+          if (!document.body) return
+          const rest = (document.body.getAttribute('data-dsh-toolbox-mounted') || '').split(/\s+/).filter((v) => v && v !== myDomId)
+          if (rest.length) document.body.setAttribute('data-dsh-toolbox-mounted', rest.join(' '))
+          else document.body.removeAttribute('data-dsh-toolbox-mounted')
+        } catch (e) {}
       })
     }
     const slots = ctx.get('slots')
@@ -28,21 +37,39 @@ return {
     // app-shell 每次切会话都会写 localStorage['dsh.sessions.current']（浏览器全局权威）。
     // 抽屉主实例挂在宿主会话下，useSessions 不响应 UI 切会话——本桥 patch Storage.setItem，
     // 写入该 key 的瞬间 dispatch 自定义事件，抽屉监听后立即读取（零延迟），替代轮询主路径。
-    // 副作用极小（仅多发一个事件）；多实例共用一个 patch（__tbPatched 守卫），主实例停止时恢复。
+    // 多 bundle 共享同一个 patch（__tbPatched 守卫 + __tbEvents 订阅集）：每个 bundle 只 dispatch
+    // 自己的事件名；disposer 按订阅移除，最后一个退订时才恢复原始 setItem（引用计数恢复）。
+    const SESSION_EVENT = RT.event('session-changed')
     try {
       if (typeof localStorage !== 'undefined' && typeof window !== 'undefined') {
         const proto = Object.getPrototypeOf(localStorage)
-        const orig = proto && proto.setItem
-        if (orig && !orig.__tbPatched) {
+        let orig = proto && proto.setItem
+        if (orig && orig.__tbPatched && orig.__tbEvents) {
+          // 已有其他 bundle 的 patch：只订阅自己的事件名
+          orig.__tbEvents.add(SESSION_EVENT)
+          const shared = orig
+          ctx.effect(() => () => {
+            try {
+              shared.__tbEvents.delete(SESSION_EVENT)
+              if (!shared.__tbEvents.size && proto.setItem === shared && shared.__tbOrig) proto.setItem = shared.__tbOrig
+            } catch (e) {}
+          })
+        } else if (orig && !orig.__tbPatched) {
+          const events = new Set([SESSION_EVENT])
           const wrapped = function (k, v) {
             const r = orig.apply(this, arguments)
-            try { if (k === 'dsh.sessions.current') window.dispatchEvent(new CustomEvent('tb-session-changed', { detail: v })) } catch (e) {}
+            try { if (k === 'dsh.sessions.current') { for (const ev of events) window.dispatchEvent(new CustomEvent(ev, { detail: v })) } } catch (e) {}
             return r
           }
           wrapped.__tbPatched = true
+          wrapped.__tbEvents = events
+          wrapped.__tbOrig = orig
           proto.setItem = wrapped
           ctx.effect(() => () => {
-            try { if (proto.setItem === wrapped) proto.setItem = orig } catch (e) {}
+            try {
+              events.delete(SESSION_EVENT)
+              if (!events.size && proto.setItem === wrapped) proto.setItem = orig
+            } catch (e) {}
           })
         }
       }
@@ -56,15 +83,23 @@ return {
     // 覆盖——不与 React 文本节点打架。running 计数直接统计面板 DOM 里「可见且 running」的行：
     // 官方 badge 统计整个进程的动态插件，toolbox/plugins 只有当前工具箱的单仓库清单，
     // 用它计算会偏小；面板未打开时行不渲染，官方文本本就是正确的全局值，不覆盖。
-    // 开关与管理视图共用、localStorage 持久化，默认开。
-    const PANEL_HIDE_KEY = 'tbx-hide-host-only'
+    // 开关与管理视图共用、localStorage 持久化，默认开。动态模式保留历史 key；编译 bundle 按 bundleId 隔离。
+    const PANEL_HIDE_KEY = RT.bundleId === 'dynamic' ? 'tbx-hide-host-only' : 'tbx-hide-host-only-' + RT.bundleId
+    const PANEL_HIDE_TOKEN = RT.domMountedValue()
+    const tokenList = (el, attr) => (el.getAttribute(attr) || '').split(/\s+/).filter(Boolean)
+    const setOwnToken = (el, attr, on) => {
+      const next = tokenList(el, attr).filter((v) => v !== PANEL_HIDE_TOKEN)
+      if (on) next.push(PANEL_HIDE_TOKEN)
+      if (next.length) el.setAttribute(attr, next.join(' '))
+      else el.removeAttribute(attr)
+    }
     const panelHide = {
       on: (() => { try { return localStorage.getItem(PANEL_HIDE_KEY) !== '0' } catch (e) { return true } })(),
       headless: new Set(),
     }
     styles.insert([
-      'li[data-cordis-row][data-tb-hide]{display:none!important}',
-      '[data-cordis-panel] section[data-tb-hide]{display:none!important}',
+      'li[data-cordis-row][data-tb-hide~="' + PANEL_HIDE_TOKEN + '"]{display:none!important}',
+      '[data-cordis-panel] section[data-tb-hide~="' + PANEL_HIDE_TOKEN + '"]{display:none!important}',
       'button[data-cordis-badge] span[data-tb-count]{font-size:0!important}',
       'button[data-cordis-badge] span[data-tb-count]::after{content:attr(data-tb-count);font-size:12px;line-height:16px}',
     ].join(''))
@@ -73,16 +108,14 @@ return {
       const rows = document.querySelectorAll('li[data-cordis-row]')
       for (const li of rows) {
         const hide = panelHide.on && panelHide.headless.has(li.getAttribute('data-cordis-row')) && !li.hasAttribute('data-cordis-awaiting')
-        if (hide) { if (!li.hasAttribute('data-tb-hide')) li.setAttribute('data-tb-hide', '') }
-        else if (li.hasAttribute('data-tb-hide')) li.removeAttribute('data-tb-hide')
+        setOwnToken(li, 'data-tb-hide', hide)
       }
       const panel = document.querySelector('[data-cordis-panel]')
       if (panel) for (const sec of panel.querySelectorAll('section')) {
         const lis = sec.querySelectorAll('li[data-cordis-row]')
         let vis = 0
         for (const li of lis) if (!li.hasAttribute('data-tb-hide')) vis++
-        if (lis.length > 0 && vis === 0) { if (!sec.hasAttribute('data-tb-hide')) sec.setAttribute('data-tb-hide', '') }
-        else if (sec.hasAttribute('data-tb-hide')) sec.removeAttribute('data-tb-hide')
+        setOwnToken(sec, 'data-tb-hide', lis.length > 0 && vis === 0)
       }
       const badge = document.querySelector('button[data-cordis-badge]')
       if (!badge) return
@@ -111,7 +144,7 @@ return {
     }
     async function refreshPanelHide() {
       try {
-        const r = await host.call('toolbox/plugins', {})
+        const r = await host.call(RT.rpc('plugins'), {})
         if (!r || !r.ok || !Array.isArray(r.plugins)) return
         panelHide.headless = new Set(r.plugins.filter((p) => !p.hasClientHalf).map((p) => p.pluginId))
         applyPanelHide()
@@ -136,7 +169,7 @@ return {
       applyPanelHide()
     }
 
-    styles.insert([
+    const toolboxCss = [
       '.tb-entry{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;margin:0 4px 0 0;border:1px solid var(--dsw-alias-border-l2,#4a4b55);border-radius:6px;background:var(--dsw-alias-bg-layer-1,#26272e);color:var(--dsw-alias-label-primary,#e8e8ea);font-size:12px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;appearance:none;box-sizing:border-box;font-family:inherit}',
       '.tb-entry:hover{background:var(--dsw-alias-bg-layer-2,#30313a)}',
       '.tb-entry-active{color:var(--dsw-alias-brand-primary,#3b82f6);border-color:var(--dsw-alias-brand-primary,#3b82f6)}',
@@ -518,7 +551,22 @@ return {
       '.fl-branch-pill{flex:none;font-size:9.5px;padding:0 5px;border-radius:3px;background:rgba(91,141,239,.12);color:var(--tb-active-text,#7fa7f0);font-weight:600}',
       '.fl-branch-txt{flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--tb-text-2,var(--dsw-alias-label-secondary,#9a9ba6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.fl-branch-ai{font-style:italic}',
-    ].join('\n'))
+    ].join('\n')
+    // 编译 bundle 的主 UI 样式以独立 scope 包裹，避免不同 bundle/版本的 .tb-*、.jr-* 互相覆盖。
+    // 动态模式保持历史全局样式；导航按钮位于 scope 外，编译模式另补值级选择器。
+    styles.insert(RT.bundleId === 'dynamic'
+      ? toolboxCss
+      : '@scope ([data-dsh-toolbox-scope="' + RT.domValue() + '"]) {\n' + toolboxCss + '\n}')
+    if (RT.bundleId !== 'dynamic') {
+      const nav = '[data-dsh-toolbox-entry="' + RT.domValue() + '"]'
+      styles.insert([
+        nav + '{width:100%;height:32px;color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-radius:8px;align-items:center;gap:8px;padding:0 12px;font-size:13px;display:flex;font-family:inherit;box-sizing:border-box}',
+        nav + ':hover{background:var(--dsw-specific-sidebar-nav-item-hover,var(--dsw-alias-bg-layer-2,#31323b));color:var(--dsw-alias-label-primary)}',
+        nav + '[data-active]{background:var(--dsw-specific-sidebar-nav-item-active,var(--dsw-alias-bg-layer-2,#31323b));color:var(--dsw-alias-label-primary);font-weight:600}',
+        '[data-dsh-frame][data-sidebar-collapsed] ' + nav + '{justify-content:center;width:100%;padding:0}',
+        '[data-dsh-frame][data-sidebar-collapsed] ' + nav + ' .tb-nav-label{display:none}',
+      ].join('\n'))
+    }
 
     let open = false
     const listeners = new Set()
@@ -543,10 +591,10 @@ return {
         {
           type: 'button',
           className: 'tb-entry' + (isOpen ? ' tb-entry-active' : ''),
-          title: '工具箱（工具集）',
+          title: RT.displayName + '（工具集）',
           onClick: () => store.toggle(),
         },
-        props.wide ? '工具箱' : '箱',
+        props.wide ? RT.displayName : '箱',
       )
     }
 
@@ -590,10 +638,11 @@ return {
 
       const entry = document.createElement('button')
       entry.type = 'button'
-      entry.setAttribute('data-dsh-toolbox-entry', '')
-      entry.setAttribute('aria-label', '工具箱')
-      entry.setAttribute('title', '工具箱')
-      entry.innerHTML = '<span class="tb-nav-icon">' + NAV_ICON + '</span><span class="tb-nav-label">工具箱</span>'
+      entry.setAttribute('data-dsh-toolbox-entry', RT.domValue())
+      entry.setAttribute('aria-label', RT.displayName)
+      entry.setAttribute('title', RT.displayName)
+      const safeLabel = String(RT.displayName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+      entry.innerHTML = '<span class="tb-nav-icon">' + NAV_ICON + '</span><span class="tb-nav-label">' + safeLabel + '</span>'
       entry.addEventListener('click', () => store.toggle())
 
       let root
@@ -640,12 +689,12 @@ return {
     const SNAP_THRESHOLD = 120
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
-    const fetchTools = (root) => host.call('toolbox/tools', { root: root || undefined })
+    const fetchTools = (root) => host.call(RT.rpc('tools'), { root: root || undefined })
       .then((r) => (r && r.ok && Array.isArray(r.tools) ? r.tools : []))
       .catch(() => [])
 
     // ---- 抽屉几何与激活 Tab 本地记忆（localStorage；无 localStorage 的环境静默跳过）----
-    const LS_KEY = 'dsh.toolbox.drawer'
+    const LS_KEY = RT.storageKey('drawer')
     const lsRead = () => {
       try {
         if (typeof localStorage === 'undefined') return null
@@ -675,7 +724,7 @@ return {
       trace: 'session', usage: 'session', prompt: 'session', context: 'session', search: 'session', lineage: 'session', tools: 'session', flow: 'session', flowedit: 'session',
       toolbox: 'system', 'theme-teal': 'system', 'theme-amber': 'system', selfview: 'system',
     }
-    const CATS_LS_KEY = 'dsh.toolbox.cats'
+    const CATS_LS_KEY = RT.storageKey('cats')
     // 抽屉导航临时记忆（客户端重载即清）：上次离开的 分类+工具；null = 重载后还没打开过抽屉
     let lastNav = null
     const catsRead = () => {
@@ -740,6 +789,9 @@ return {
       const [busyTool, setBusyTool] = React.useState(null)
       const [managing, setManaging] = React.useState(false)
       const [plugins, setPlugins] = React.useState([])
+      const [pluginCaps, setPluginCaps] = React.useState(null) // Host 半 capabilities（编译模式降级 UI 依据；null=未加载，按全能力渲染）
+      const canRebuildFromDisk = !pluginCaps || pluginCaps.rebuildFromDisk !== false
+      const canAiUsage = !pluginCaps || pluginCaps.aiUsage !== false
       const [rebuilding, setRebuilding] = React.useState(false)
       const [rebuildLines, setRebuildLines] = React.useState(null)
       const [rebuildHistory, setRebuildHistory] = React.useState([])
@@ -750,6 +802,8 @@ return {
       const [cat, setCat] = React.useState(() => { const s = lsRead(); return s && typeof s.cat === 'string' ? s.cat : 'ai' }) // 激活分类（localStorage 记忆）
       const [activeByCat, setActiveByCat] = React.useState(() => { const s = lsRead(); return (s && s.activeByCat && typeof s.activeByCat === 'object') ? s.activeByCat : {} }) // 各分类最近选中的工具（切分类时恢复）
       const [catOverrides, setCatOverrides] = React.useState(() => { const s = catsRead(); return (s && s.overrides && typeof s.overrides === 'object') ? s.overrides : {} }) // 管理树拖拽改归属的结果
+      // refreshTools 在抽屉关闭的首帧 effect 中也可能立即拿到静态工具清单；必须在任何 early return 前初始化。
+      const catOf = (id) => catOverrides[id] || DEFAULT_CAT[id] || 'dev'
       const [collapsedCats, setCollapsedCats] = React.useState(() => { const s = catsRead(); return (s && s.collapsed && typeof s.collapsed === 'object') ? s.collapsed : {} })
       const [dragId, setDragId] = React.useState(null) // 管理树正在拖拽的条目 id（entryId）
       // 明暗主题：theme 服务持有偏好；ThemeSnapshot 无顶层 colorScheme，生效明暗在 snapshot.active.colorScheme
@@ -855,16 +909,18 @@ return {
             } catch (e) {}
           }
           syncTheme()
-          win.document.title = '工具箱 · 画中画'
+          win.document.title = RT.displayName + ' · 画中画'
           win.document.body.style.margin = '0'
           // 3. 结构：顶部工具条（pip 原生，非镜像）+ 镜像容器
           const rootEl = win.document.createElement('div')
           rootEl.className = 'jr-pip-root'
+          // PiP 克隆保留 bundle root attribute（主题变量/CSS scope 挂在 bundle root 上）
+          rootEl.setAttribute('data-dsh-toolbox-root', RT.bundleId)
           const barEl = win.document.createElement('div')
           barEl.className = 'jr-pip-bar'
           const barTitle = win.document.createElement('span')
           barTitle.className = 'jr-pip-bar-title'
-          barTitle.textContent = '工具箱 · 画中画（内容与主窗口一致，操作实时同步）'
+          barTitle.textContent = RT.displayName + ' · 画中画（内容与主窗口一致，操作实时同步）'
           const btnMax = win.document.createElement('button')
           btnMax.className = 'jr-pip-bar-btn'
           btnMax.textContent = '⤢ 放大'
@@ -1234,7 +1290,7 @@ return {
       // —— 当前会话/工作区解析（v6.5）——
       // 抽屉主实例挂在宿主会话（toolbox-host-*）下，其 useSessions 不响应浏览器 UI 切会话；
       // app-shell 会把当前会话写入 localStorage['dsh.sessions.current']（浏览器全局权威）。
-      // 来源：localStorage 事件桥（tb-session-changed，切会话零延迟，主路径）
+      // 来源：localStorage 事件桥（SESSION_EVENT，切会话零延迟，主路径）
       // + useSessions hook（响应式兜底）+ useState 初始化读取（无轮询）。
       const readLsSession = () => {
         try {
@@ -1247,12 +1303,12 @@ return {
       }
       const [lsSession, setLsSession] = React.useState(readLsSession)
       // 事件桥响应（v6.5）：app-shell 写 localStorage['dsh.sessions.current'] 的瞬间
-      // 触发 tb-session-changed（见 apply 层 patch），立即刷新——零延迟，替代轮询主路径。
+      // 触发 SESSION_EVENT（见 apply 层 patch），立即刷新——零延迟，替代轮询主路径。
       React.useEffect(() => {
         if (typeof window === 'undefined') return undefined
         const onChanged = () => setLsSession(readLsSession())
-        window.addEventListener('tb-session-changed', onChanged)
-        return () => { try { window.removeEventListener('tb-session-changed', onChanged) } catch (e) {} }
+        window.addEventListener(SESSION_EVENT, onChanged)
+        return () => { try { window.removeEventListener(SESSION_EVENT, onChanged) } catch (e) {} }
       }, [])
       const hookSession = props.useSessions((s) => (s && s.current ? String(s.current) : undefined))
       const currentSessionId = (hookSession || lsSession) || undefined
@@ -1261,7 +1317,7 @@ return {
       React.useEffect(() => {
         let alive = true
         if (!currentSessionId) { setSessionCwd(undefined); return undefined }
-        host.call('toolbox/session-info', { session: currentSessionId })
+        host.call(RT.rpc('session-info'), { session: currentSessionId })
           .then((r) => { if (alive && r && r.ok && typeof r.cwd === 'string') setSessionCwd(r.cwd) })
           .catch(() => {})
         return () => { alive = false }
@@ -1321,7 +1377,7 @@ return {
           }
           // 超时保护（v6.5.3）：首次打开 RPC 通道未就绪时 host.call 可能永久 pending——
           // 5s 无响应即视为失败，走下方一次性重试，避免面板永久停在「加载面板…」
-          const callP = host.call('toolbox/panel', {
+          const callP = host.call(RT.rpc('panel'), {
             tool: toolId,
             action: action || '',
             fields,
@@ -1468,8 +1524,9 @@ return {
       // ===== 插件生命周期开关（齿轮管理视图）：直连 Host 半 toolbox/plugins + toolbox/plugin-toggle =====
       async function refreshPlugins() {
         try {
-          const r = await host.call('toolbox/plugins', { session: currentSessionId || undefined })
+          const r = await host.call(RT.rpc('plugins'), { session: currentSessionId || undefined })
           setPlugins(r && r.ok && Array.isArray(r.plugins) ? r.plugins : [])
+          if (r && r.ok && r.capabilities && typeof r.capabilities === 'object') setPluginCaps(r.capabilities)
         } catch (e) {}
       }
 
@@ -1478,7 +1535,7 @@ return {
         if (p.running && p.canStop === false) return
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-toggle', {
+          const r = await host.call(RT.rpc('plugin-toggle'), {
             pluginId: p.pluginId,
             enable: !p.running,
             root: currentCwd || undefined,
@@ -1507,7 +1564,7 @@ return {
         if (p.hasClientHalf) return
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-restart', {
+          const r = await host.call(RT.rpc('plugin-restart'), {
             pluginId: p.pluginId,
             root: currentCwd || undefined,
             session: currentSessionId || undefined,
@@ -1524,7 +1581,7 @@ return {
       async function toggleAll(enable) {
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-toggle-all', { enable, root: currentCwd || undefined, session: currentSessionId || undefined })
+          const r = await host.call(RT.rpc('plugin-toggle-all'), { enable, root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('批量操作无响应')
           else {
@@ -1547,7 +1604,7 @@ return {
         if (p.defaultStart == null) return // 不在 plugins.json 清单内，无条目可记
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-set-default', {
+          const r = await host.call(RT.rpc('plugin-set-default'), {
             pluginId: p.pluginId,
             enabled: !p.defaultStart,
             root: currentCwd || undefined,
@@ -1564,7 +1621,7 @@ return {
       async function restartAll() {
         setError(null)
         try {
-          const r = await host.call('toolbox/plugin-restart-all', { root: currentCwd || undefined, session: currentSessionId || undefined })
+          const r = await host.call(RT.rpc('plugin-restart-all'), { root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('批量重跑无响应')
           else {
@@ -1582,18 +1639,20 @@ return {
         settleAfterRestart()
       }
 
-      // 重建耗时历史（迷你柱状图）
+      // 重建耗时历史（迷你柱状图；仅动态模式有磁盘重建语义）
       async function loadRebuildHistory() {
+        if (pluginCaps && pluginCaps.rebuildFromDisk === false) { setRebuildHistory([]); return }
         try {
-          const r = await host.call('toolbox/rebuild-history')
+          const r = await host.call(RT.rpc('rebuild-history'))
           setRebuildHistory(r && r.ok && Array.isArray(r.history) ? r.history : [])
         } catch (e) {}
       }
 
-      // AI 用量台账聚合（管理视图总行）
+      // AI 用量台账聚合（管理视图总行；bundle 未含 AI 工具时不请求不展示）
       async function loadAiUsage() {
+        if (pluginCaps && pluginCaps.aiUsage === false) { setAiUsage(null); return }
         try {
-          const r = await host.call('toolbox/ai-usage')
+          const r = await host.call(RT.rpc('ai-usage'))
           setAiUsage(r && r.ok ? r : null)
         } catch (e) {}
       }
@@ -1603,7 +1662,7 @@ return {
         setRebuilding(true)
         setError(null)
         try {
-          const r = await host.call('toolbox/rebuild', { root: currentCwd || undefined, session: currentSessionId || undefined })
+          const r = await host.call(RT.rpc('rebuild'), { root: currentCwd || undefined, session: currentSessionId || undefined })
           const lines = []
           if (!r) lines.push('重建请求无响应')
           else {
@@ -1882,7 +1941,7 @@ return {
         ),
       )
 
-      const gearButton = React.createElement('button', {
+      const gearButton = RT.capabilities.managePlugins === false ? null : React.createElement('button', {
         type: 'button',
         className: 'jr-overlay-close',
         title: managing ? '返回工具面板' : '管理插件（停止/启动）',
@@ -1990,7 +2049,6 @@ return {
       }
 
       // ---- 分类归属与迁移（导航行与管理树共用同一 catOf 数据源） ----
-      const catOf = (id) => catOverrides[id] || DEFAULT_CAT[id] || 'dev'
       const pickCat = (id) => {
         if (id === cat) return
         // 记住旧分类当前选择；切到新分类后恢复其上次选中的工具，无记录（或已停）则选该分类第一个
@@ -2054,8 +2112,9 @@ return {
                   type: 'button',
                   className: 'tb-btn tb-btn-primary',
                   disabled: rebuilding,
+                  title: canRebuildFromDisk ? undefined : '编译合集：从固化的功能清单恢复 define/run（不读磁盘）',
                   onClick: runRebuild,
-                }, rebuilding ? '重建中…' : '从 plugins.json 重建/补齐'),
+                }, rebuilding ? '重建中…' : (canRebuildFromDisk ? '从 plugins.json 重建/补齐' : '恢复编译清单')),
                 React.createElement('button', {
                   type: 'button',
                   className: 'tb-btn',
@@ -2090,7 +2149,7 @@ return {
               rebuildLines
                 ? React.createElement('div', { className: 'tb-note' }, rebuildLines.map((l, i) => React.createElement('div', { key: i }, l)))
                 : null,
-              rebuildHistory.length
+              rebuildHistory.length && canRebuildFromDisk
                 ? (() => {
                     const max = Math.max.apply(null, rebuildHistory.map((h) => h.ms || 0).concat([1]))
                     return React.createElement('div', { className: 'tb-note' },
@@ -2109,7 +2168,7 @@ return {
                         }))))
                   })()
                 : null,
-              aiUsage && aiUsage.totals && aiUsage.totals.calls
+              aiUsage && canAiUsage && aiUsage.totals && aiUsage.totals.calls
                 ? React.createElement('div', { className: 'tb-note' },
                     'AI 用量（台账最近 100 条）：共 ' + aiUsage.totals.calls + ' 次 · 输出 ' + aiUsage.totals.out + ' tok' + (aiUsage.totals.errors ? ' · 失败 ' + aiUsage.totals.errors + ' 次' : '') + (aiUsage.totals.todayCalls ? '；今日 ' + aiUsage.totals.todayCalls + ' 次 / ' + aiUsage.totals.todayOut + ' tok' : ''),
                     React.createElement('div', { className: 'tb-pills', style: { marginTop: '4px' } },
@@ -2136,7 +2195,9 @@ return {
                         },
                       }, '复制 CSV')))
                 : null,
-              React.createElement('div', { className: 'tb-note' }, '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json；「重启后」pill = 下次重建的默认启停，点击切换、只改记忆不动当前状态。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件（框架/主题）请到 Cordis 面板操作。'),
+              React.createElement('div', { className: 'tb-note' }, canRebuildFromDisk
+                ? '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json；「重启后」pill = 下次重建的默认启停，点击切换、只改记忆不动当前状态。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件（框架/主题）请到 Cordis 面板操作。'
+                : '开关 = 真停 / 真启插件（等同 Cordis 面板的停止/运行，两处状态同步），同时写入本合集的启停记忆；「重启后」pill = 下次启动的默认启停，点击切换、只改记忆不动当前状态。停止后 Tab 级联消失，启动后约 0.5s 自动挂回。含 Client 半的插件请到 Cordis 面板操作。'),
             ),
             React.createElement('div', { className: 'tb-pane-body tb-pane-col' },
               (() => {
@@ -2234,7 +2295,9 @@ return {
       } else if (tools.length === 0) {
         body = currentCwd
           ? React.createElement('div', { className: 'tb-empty' },
-              '当前工作区未检测到 dsh-dynamic-toolbox\n切换到一个包含工具箱的工作区后自动加载；本工作区下不显示工具',
+              canRebuildFromDisk
+                ? '当前工作区未检测到 dsh-dynamic-toolbox\n切换到一个包含工具箱的工作区后自动加载；本工作区下不显示工具'
+                : '当前工作区暂未挂载本工具箱合集\n切换到一个有效工作区后自动加载；本工作区下不显示工具',
             )
           : React.createElement('div', { className: 'tb-empty' },
               '暂无工具\n运行工具插件（如 Jira）后自动出现在这里；已停止的插件可在右上角管理按钮里重新启动',
@@ -2252,6 +2315,8 @@ return {
       const drawerEl = React.createElement('div', {
         ref: drawerRef,
         className: 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'full' ? ' jr-docked-full' : ''),
+        // bundle root：CSS scope / 主题变量挂载点（多 bundle 共存隔离；PiP 克隆随 DOM 属性一并镜像）
+        'data-dsh-toolbox-root': RT.bundleId,
         style,
       },
         React.createElement('div', {
@@ -2261,7 +2326,7 @@ return {
           onPointerUp: onHeaderUp,
           onPointerCancel: onHeaderUp,
         },
-          React.createElement('span', { className: 'jr-drawer-title' }, managing ? '工具箱 · 管理' : '工具箱'),
+          React.createElement('span', { className: 'jr-drawer-title' }, managing ? RT.displayName + ' · 管理' : RT.displayName),
           themeButton,
           pipButton,
           gearButton,
@@ -2292,13 +2357,17 @@ return {
         handles,
       )
 
-      return React.createElement(React.Fragment, null,
+      const overlay = React.createElement(React.Fragment, null,
         drawerEl,
         snapHint ? React.createElement('div', { className: 'jr-snap-indicator' }) : null,
         resize ? React.createElement('div', { className: 'jr-resize-badge' },
           Math.round(width || 520) + ' × ' + (height ? Math.round(height) : '自动'),
         ) : null,
       )
+      return RT.bundleId === 'dynamic' ? overlay : React.createElement('div', {
+        'data-dsh-toolbox-scope': RT.domValue(),
+        style: { display: 'contents' },
+      }, overlay)
     }
 
     if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
@@ -2307,7 +2376,7 @@ return {
     } else {
       // 无 DOM 环境兜底：官方 footer Slot（rc.7 root-scoped list Slot，owner 只传 { wide }）
       slots.inject('sidebar.footer.action', () => slots.register(
-        { name: 'sidebar.footer.action', id: 'toolbox-entry', order: -1000, label: '工具箱' },
+        { name: 'sidebar.footer.action', id: RT.slot('entry'), order: -1000, label: RT.displayName },
         (props) => React.createElement(Entry, { wide: Boolean(props.wide) }),
       ))
     }
@@ -2315,9 +2384,9 @@ return {
     slots.inject('shell.overlay', () => slots.register(
       {
         name: 'shell.overlay',
-        id: 'toolbox-drawer',
+        id: RT.slot('drawer'),
         order: 120,
-        label: '工具箱抽屉',
+        label: RT.displayName + '抽屉',
       },
       (props) => React.createElement(Drawer, props),
     ))

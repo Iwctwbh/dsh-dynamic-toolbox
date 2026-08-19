@@ -1,5 +1,5 @@
 // ===== toolbox-host.js：工具箱框架 Host 半 — 工具注册表 + 面板 RPC + 插件生命周期开关 =====
-// 工具插件（Host-only）通过 ctx.get('toolboxRegistry').register(...) 注册；
+// 工具插件（Host-only）通过 ctx.get(TOOLBOX_RUNTIME.registryService).register(...) 注册；
 // Client 壳通过 toolbox/tools（列表）与 toolbox/panel（渲染/动作）驱动；
 // 齿轮管理视图经 toolbox/plugins（清单）与 toolbox/plugin-toggle（真停/真启）驱动——
 // 直连 dynamicCordisRunner 服务（Cordis 面板的停止/运行按钮就是它的 @Remote 版本
@@ -9,125 +9,112 @@
 return {
   name: 'toolbox-host',
   async apply(ctx) {
-    // ===== 仓库定位（v6.3 multiplex）：探测所有含本仓库强标记（plugins.json 含 id:'toolbox'）的根 ====
-    // 直下命中优先，一级子目录兜底（仓库 clone 为宿主项目子目录场景）；不缓存——多仓库并存时
-    // 每个候选都是独立仓库，不能锁死第一个。
-    const baseRoots = () => {
-      const r = []
-      const sp = ctx.get('sandboxPolicy')
-      if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) r.push(sp.workspaceRoot)
-      const ss = ctx.get('sessions')
-      if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && r.indexOf(c) < 0) r.push(c) } } catch (e) {} }
-      return r
-    }
-    const readManifestAt = async (fs, dir) => {
-      try {
-        const t = await fs.resolve('plugins.json', { cwd: dir })
-        if (!await fs.stat(t)) return null
-        const parsed = JSON.parse(await fs.readText(t))
-        if (!parsed || !Array.isArray(parsed.plugins) || !parsed.plugins.some((e) => e && e.id === 'toolbox')) return null
-        return { manifest: parsed, root: String(dir).replace(/[\\/]+$/, '') }
-      } catch (e) { return null }
-    }
-    const probeManifests = async (bases) => {
-      const fs = ctx.get('fs')
-      if (!fs) return []
-      const out = []
-      const seen = new Set()
-      for (const b of bases) {
-        const hit = await readManifestAt(fs, b)
-        if (hit && !seen.has(hit.root)) { seen.add(hit.root); out.push(hit) }
+    const RT = TOOLBOX_RUNTIME
+
+    // ===== Artifact Provider（产物来源抽象）=====
+    // 动态模式：DynamicDiskProvider——探测所有含本仓库强标记（plugins.json 含 id:'toolbox'）的根
+    // （直下命中优先，一级子目录兜底），payload 实时读盘，启停记忆落 <root>/<dataDir>/toolbox-plugins.json。
+    // 编译模式：静态 Bootstrap 提供的 namespaced Service——内嵌清单/payload，不扫仓库、不读源码仓库文件。
+    // 本文件主体只依赖统一接口，不再直接假设 plugins.json 必然存在。
+    const makeDynamicDiskProvider = () => {
+      const baseRoots = () => {
+        const r = []
+        const sp = ctx.get('sandboxPolicy')
+        if (sp && typeof sp.workspaceRoot === 'string' && sp.workspaceRoot) r.push(sp.workspaceRoot)
+        const ss = ctx.get('sessions')
+        if (ss) { try { for (const s of ss.list()) { const c = s && s.header && s.header.cwd; if (typeof c === 'string' && c && r.indexOf(c) < 0) r.push(c) } } catch (e) {} }
+        return r
       }
-      for (const b of bases) {
+      const readManifestAt = async (fs, dir) => {
         try {
-          const entries = await fs.listDir(await fs.resolve('.', { cwd: b }))
-          for (const ent of entries || []) {
-            if (!ent || ent.type !== 'directory' || !ent.name) continue
-            if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
-            const hit = await readManifestAt(fs, b.replace(/[\\/]+$/, '') + '/' + ent.name)
-            if (hit && !seen.has(hit.root)) { seen.add(hit.root); out.push(hit) }
-          }
-        } catch (e) {}
+          const t = await fs.resolve('plugins.json', { cwd: dir })
+          if (!await fs.stat(t)) return null
+          const parsed = JSON.parse(await fs.readText(t))
+          if (!parsed || !Array.isArray(parsed.plugins) || !parsed.plugins.some((e) => e && e.id === 'toolbox')) return null
+          return { manifest: parsed, root: String(dir).replace(/[\\/]+$/, '') }
+        } catch (e) { return null }
       }
-      return out
+      // 不缓存——多仓库并存时每个候选都是独立仓库，不能锁死第一个
+      const probeManifests = async (bases) => {
+        const fs = ctx.get('fs')
+        if (!fs) return []
+        const out = []
+        const seen = new Set()
+        for (const b of bases) {
+          const hit = await readManifestAt(fs, b)
+          if (hit && !seen.has(hit.root)) { seen.add(hit.root); out.push(hit) }
+        }
+        for (const b of bases) {
+          try {
+            const entries = await fs.listDir(await fs.resolve('.', { cwd: b }))
+            for (const ent of entries || []) {
+              if (!ent || ent.type !== 'directory' || !ent.name) continue
+              if (ent.name.charAt(0) === '.' || ent.name === 'node_modules') continue
+              const hit = await readManifestAt(fs, b.replace(/[\\/]+$/, '') + '/' + ent.name)
+              if (hit && !seen.has(hit.root)) { seen.add(hit.root); out.push(hit) }
+            }
+          } catch (e) {}
+        }
+        return out
+      }
+      const CONFIG_REL = RT.dataDir + '/toolbox-plugins.json'
+      return {
+        mode: 'dynamic-dev',
+        capabilities: RT.capabilities,
+        // 全部候选仓库清单（本框架挑选自己的 root 用）
+        async manifests() { return probeManifests(baseRoots()) },
+        // manifest(base?)：base 给定时只探测该路径（resolveRoot 用）；省略时全局探测，返回第一个命中
+        async manifest(base) {
+          const hits = await probeManifests(base ? [base] : baseRoots())
+          return hits[0] || null
+        },
+        async payload(root, entry) {
+          const fs = ctx.get('fs')
+          if (!fs) throw new Error('fs 服务不可用')
+          const pt = await fs.resolve(entry.payload, { cwd: root })
+          return JSON.parse(await fs.readText(pt))
+        },
+        // 启停记忆读：<root>/<dataDir>/toolbox-plugins.json
+        async readEnablement(root) {
+          const fs = ctx.get('fs')
+          if (!fs || !root) return { version: 1, plugins: {} }
+          try {
+            const t = await fs.resolve(CONFIG_REL, { cwd: root })
+            if (!await fs.stat(t)) return { version: 1, plugins: {} }
+            const parsed = JSON.parse(await fs.readText(t))
+            if (!parsed || typeof parsed !== 'object' || !parsed.plugins || typeof parsed.plugins !== 'object') {
+              return { version: 1, plugins: {} }
+            }
+            return parsed
+          } catch (e) { return { version: 1, plugins: {} } }
+        },
+        // 启停记忆写：走 subprocess（与自动补齐报告同路径，绕过 fs 沙箱策略）
+        async writeEnablement(root, cfg) {
+          const sub = ctx.get('subprocess')
+          if (!sub || !root) return false
+          try {
+            const handle = sub.spawn({
+              argv: ['node', '-e', "const fs=require('fs');fs.mkdirSync(require('path').dirname(process.argv[1]),{recursive:true});fs.writeFileSync(process.argv[1],process.argv[2])", root.replace(/[\\/]+$/, '') + '/' + CONFIG_REL, JSON.stringify(cfg, null, 2)],
+              stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
+              graceMs: 10000,
+            })
+            await handle.done
+            return true
+          } catch (e) { return false }
+        },
+      }
     }
-    // findManifest(base?)：base 给定时只探测该路径（resolveRoot 用）；省略时全局探测，返回第一个命中
-    const findManifest = async (base) => {
-      const hits = await probeManifests(base ? [base] : baseRoots())
-      return hits[0] || null
-    }
+    const artifacts = (RT.artifactService && ctx.get(RT.artifactService)) || makeDynamicDiskProvider()
+
     // 全部候选仓库根（本框架挑选自己的 root 用）
-    const rootCands = (await probeManifests(baseRoots())).map((h) => h.root)
+    const rootCands = (await artifacts.manifests()).map((h) => h.root)
 
     // ==== 全局 multiplex 注册表（v6.3）：进程内只 provide 一份（首个框架或静态 bootstrapper），后续框架 attach ====
-    // 状态挂在服务对象上（跨 fiber 共享，见 makeRegistry 返回对象）：root → 工具表。
-    // 工具注册归「当前 build root」；build 用锁式 runInBuild(root, fn) —— 整个异步段持锁，
-    // 段内（工具插件 apply 的 register）buildRoot 稳定，多仓库并行冷启/手动启停绝不串表。
-    const makeRegistry = () => {
-      const tables = new Map() // root -> Map<id, entry>
-      let buildRoot = null
-      let lastRoot = null
-      let lock = Promise.resolve()
-      let release = null
-      const tableOf = (root) => {
-        if (!root) return null
-        let t = tables.get(root)
-        if (!t) { t = new Map(); tables.set(root, t) }
-        return t
-      }
-      const register = (desc, handler) => {
-        if (!desc || typeof desc.id !== 'string' || !desc.id || typeof handler !== 'function') return () => {}
-        const t = tableOf(buildRoot || lastRoot)
-        if (!t) return () => {}
-        const entry = { id: desc.id, label: desc.label || desc.id, order: typeof desc.order === 'number' ? desc.order : 0, handler }
-        t.set(desc.id, entry)
-        return () => { if (t.get(desc.id) === entry) t.delete(desc.id) }
-      }
-      return {
-        attach(root) { if (!root) return; lastRoot = root; tableOf(root) },
-        register,
-        // 互斥 build 段（评审 H2/H3 修复）：await 前一个段结束 → buildRoot=root → 执行 fn（段内
-        // 任何 register 都归 root）→ finally 清 buildRoot 并释放锁。锁在服务对象上，跨框架共享。
-        async runInBuild(root, fn) {
-          const prev = lock
-          let r
-          lock = new Promise((res) => { r = res })
-          await prev
-          buildRoot = root || null
-          try { return await fn() } finally { buildRoot = null; r() }
-        },
-        tools(root) {
-          const t = tables.get(root || lastRoot) || new Map()
-          return [...t.values()].sort((a, b) => a.order - b.order)
-            .map((x) => ({ id: x.id, label: x.label, order: x.order }))
-        },
-        async panel(root, call) {
-          const t = tables.get(root || lastRoot)
-          const toolId = call && typeof call.tool === 'string' ? call.tool : ''
-          const entry = t && t.get(toolId)
-          if (!entry || !entry.handler) return { ok: false, error: '工具未注册或已停止: ' + (toolId || '(空)') }
-          try {
-            const res = await entry.handler({
-              action: call && typeof call.action === 'string' ? call.action : '',
-              fields: (call && call.fields && typeof call.fields === 'object') ? call.fields : {},
-              state: (call && call.state) || null,
-              root: (typeof root === 'string' && root) ? root : undefined,
-              session: (call && typeof call.session === 'string' && call.session) ? call.session : undefined,
-            })
-            if (!res || typeof res.html !== 'string') return { ok: false, error: '工具返回了无效的面板内容' }
-            const out = { ok: true, html: res.html, state: res.state == null ? null : res.state }
-            if (typeof res.copy === 'string' && res.copy) out.copy = res.copy
-            return out
-          } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
-        },
-        has(root) { return root ? tables.has(root) : false },
-        roots() { return [...tables.keys()] },
-      }
-    }
-
-    // 注册表复用/提供：已存在（其他仓库先启动）→ 复用同一全局实例；否则 provide 新实例。
-    const existingReg = ctx.get('toolboxRegistry')
-    const registry = existingReg || (() => { const r = makeRegistry(); ctx.provide('toolboxRegistry', r); return r })()
+    // 实现唯一事实源：shared/registry.js（拼接进本 payload，动态/编译/静态 bootstrap 同一契约）。
+    // 状态挂在服务对象上（跨 fiber 共享）：root → 工具表；build 锁式 runInBuild 见该文件注释。
+    // 注册表复用/提供：已存在（其他仓库/其他 bundle 先启动）→ 复用同一全局实例；否则 provide 新实例。
+    const existingReg = ctx.get(RT.registryService)
+    const registry = existingReg || (() => { const r = makeToolboxRegistry(); ctx.provide(RT.registryService, r); return r })()
 
     // 框架驱动的 runner.run 必须在注册表互斥 build 段内执行（工具插件 apply 里 register 归入
     // 本 root 的表）——手动启停/重跑/批量/重挂/重建都走这里，避免落 lastRoot 单槽归错仓库。
@@ -141,6 +128,10 @@ return {
     })()
     if (myRoot) registry.attach(myRoot)
 
+    // findManifest(base?)：base 给定时只探测该路径（resolveRoot 用）；省略时全局探测，返回第一个命中。
+    // 委托 Artifact Provider：动态=磁盘探测；编译=匹配已 attach 的 workspace root。
+    const findManifest = (base) => artifacts.manifest(base)
+
     // 面板 RPC root 解析：优先调用方显式 cwd（client 传当前激活工作区路径）→ 仓库探测；
     // 无 cwd / 探测不到 → 回退本框架 root（多仓库并存时理论上总有 cwd，回退仅兼容旧调用）
     const resolveRoot = async (args) => {
@@ -153,7 +144,7 @@ return {
       return myRoot || null
     }
 
-    ctx.effect(() => harness.handle('toolbox/tools', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('tools'), async (args) => {
       const root = await resolveRoot(args)
       return { ok: true, root, tools: registry.tools(root) }
     }))
@@ -194,7 +185,7 @@ return {
       const canon = canonicalRoot(root)
       const norm = canon.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
       const prefix = norm.slice(-24)
-      return 'toolbox-host-' + (prefix ? prefix + '-' : '') + pathHash(canon)
+      return RT.hostIdPrefix + '-' + (prefix ? prefix + '-' : '') + pathHash(canon)
     }
 
     // 清单映射（按 root 缓存）：root → { name → { entryId, defaultStart } }。
@@ -270,7 +261,7 @@ return {
     // 自举宿主会话模式下插件可能挂在宿主会话名下，不再按 agentId===session 过滤）
     // 附带 defaultStart：该插件在「下次重建」时的默认启停（启停记忆 .dsh-dynamic-toolbox/toolbox-plugins.json
     // 有记录从其记录，无记录按 plugins.json 的 autoStart；未入清单为 null）
-    ctx.effect(() => harness.handle('toolbox/plugins', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugins'), async (args) => {
       if (!runner) return { ok: false, error: 'dynamicCordisRunner 服务不可用' }
       const sid = sessionOf(args)
       const root = await resolveRoot(args)
@@ -294,7 +285,7 @@ return {
           defaultStart: meta ? meta.defaultStart : null,
         })
       }
-      return { ok: true, root, plugins: rows }
+      return { ok: true, root, plugins: rows, capabilities: artifacts.capabilities }
     }))
 
     // 行内可运行的 Package：current/next 指针优先；被抑制插件（重建时只 define 未 run，
@@ -304,7 +295,7 @@ return {
 
     // 真停/真启：stop 走 stopFromPanel（与面板一致，会向会话注入通知）；
     // run 直接激活（Host-only 无 Client 半 → 无需批准，同步完成）。
-    ctx.effect(() => harness.handle('toolbox/plugin-toggle', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugin-toggle'), async (args) => {
       if (!runner) return { ok: false, error: '插件运行器服务不可用' }
       const sid = sessionOf(args)
       const agent = agentFor(sid)
@@ -338,39 +329,19 @@ return {
       return { ok: false, error: (res && (res.message || res.reason)) || '停止失败' }
     }))
 
-    // ===== 启停状态配置文件：<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json =====
-    // 齿轮开关每次真停/真启成功后落盘 { plugins: { <清单条目id>: { enabled, at } } }；
+    // ===== 启停状态配置：读写过 Artifact Provider =====
+    // 齿轮开关每次真停/真启成功后记录 { plugins: { <清单条目id>: { enabled, at } } }；
     // 重建（doRebuild）时：有记录且 enabled=false 的条目只 define 不启动（恢复上次记录），
-    // 无记录的条目按 plugins.json 的 autoStart 默认行为。写盘走 subprocess（与自动补齐报告同路径，绕过 fs 沙箱策略）。
-    const CONFIG_REL = '.dsh-dynamic-toolbox/toolbox-plugins.json'
-    const readConfig = async (root) => {
-      const fs = ctx.get('fs')
-      if (!fs || !root) return { version: 1, plugins: {} }
-      try {
-        const t = await fs.resolve(CONFIG_REL, { cwd: root })
-        if (!await fs.stat(t)) return { version: 1, plugins: {} }
-        const parsed = JSON.parse(await fs.readText(t))
-        if (!parsed || typeof parsed !== 'object' || !parsed.plugins || typeof parsed.plugins !== 'object') {
-          return { version: 1, plugins: {} }
-        }
-        return parsed
-      } catch (e) { return { version: 1, plugins: {} } }
-    }
+    // 无记录的条目按清单的 autoStart 默认行为。
+    // 动态模式落 <root>/<dataDir>/toolbox-plugins.json（subprocess 写，绕过 fs 沙箱）；
+    // 编译模式由静态 Bootstrap 的 provider 持久化（不落用户工作区，见 DSH_TOOLBOX_COMPILED_BUNDLES_PLAN §10.3）。
+    const readConfig = (root) => artifacts.readEnablement(root)
     const writeConfig = async (root, cfg) => {
-      const sub = ctx.get('subprocess')
-      if (!sub || !root) return false
-      try {
-        const handle = sub.spawn({
-          argv: ['node', '-e', "const fs=require('fs');fs.mkdirSync(require('path').dirname(process.argv[1]),{recursive:true});fs.writeFileSync(process.argv[1],process.argv[2])", root.replace(/[\\/]+$/, '') + '/' + CONFIG_REL, JSON.stringify(cfg, null, 2)],
-          stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
-          graceMs: 10000,
-        })
-        await handle.done
-        // 启停记忆已变 → 失效该 root 的清单映射缓存（defaultStart 随记忆实时变化，
-        // 否则「重启后」pill 与重建默认值冻结在框架启动后首次读取）
-        manifestCacheByRoot.delete(root)
-        return true
-      } catch (e) { return false }
+      const ok = await artifacts.writeEnablement(root, cfg)
+      // 启停记忆已变 → 失效该 root 的清单映射缓存（defaultStart 随记忆实时变化，
+      // 否则「重启后」pill 与重建默认值冻结在框架启动后首次读取）
+      if (ok) manifestCacheByRoot.delete(root)
+      return ok
     }
     // 动态 pluginId → 清单条目 id：按当前 Package 名匹配指定仓库 plugins.json 条目名
     // （匹配不到返回 null，不落盘）。按 root 路由——多仓库并存时各写各的启停记忆。
@@ -400,7 +371,7 @@ return {
     }
 
     // 只改「下次重建默认启停」（启停记忆），不动当前运行态——管理视图「重启后」pill 的点击链路
-    ctx.effect(() => harness.handle('toolbox/plugin-set-default', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugin-set-default'), async (args) => {
       const root = await resolveRoot(args)
       const pluginId = args && typeof args.pluginId === 'string' ? args.pluginId : ''
       if (!pluginId) return { ok: false, error: '缺少 pluginId' }
@@ -417,7 +388,7 @@ return {
 
     // 重跑单个插件：桩在 apply 时重读磁盘 impl——改完 plugins/<key>/tool.js 点它即生效，
     // 不用重新 define/批准。等同 toggle(enable=true) 但允许对运行中的插件执行（真重启）。
-    ctx.effect(() => harness.handle('toolbox/plugin-restart', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugin-restart'), async (args) => {
       if (!runner) return { ok: false, error: '插件运行器服务不可用' }
       const sid = sessionOf(args)
       const agent = agentFor(sid)
@@ -438,7 +409,7 @@ return {
     }))
 
     // 批量启停：一次动作完成当前仓库全部 Host-only 插件的真停/真启，启停记忆统一写一次
-    ctx.effect(() => harness.handle('toolbox/plugin-toggle-all', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugin-toggle-all'), async (args) => {
       if (!runner) return { ok: false, error: '插件运行器服务不可用' }
       const sid = sessionOf(args)
       const agent = agentFor(sid)
@@ -499,9 +470,9 @@ return {
     }))
 
     // 批量重跑：对当前运行中的 Host-only 插件逐个 run（桩重读磁盘 impl）——
-    // 改完多个 tool.js / shared/host.js / loader.js 后一键全部生效，不用逐行点「重跑」。
+    // 改完多个 tool.js / shared/host.js / 磁盘加载器后一键全部生效，不用逐行点「重跑」。
     // 停着的插件不动（尊重开关状态，不隐式启动）；含 Client 半的跳过（去 Cordis 面板）。
-    ctx.effect(() => harness.handle('toolbox/plugin-restart-all', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('plugin-restart-all'), async (args) => {
       if (!runner) return { ok: false, error: '插件运行器服务不可用' }
       const sid = sessionOf(args)
       const agent = agentFor(sid)
@@ -523,21 +494,21 @@ return {
       return { ok: failed.length === 0, done, failed, skippedClient }
     }))
 
-    // ===== 从 plugins.json 自举重建（齿轮按钮 + 启动自动补齐共用 doRebuild）=====
-    // 框架读磁盘 payload.json（本身就是 define 参数的完整 JSON），经 dynamicCordisRunner
-    // 批量 define + run Host-only 插件——全新重建缩到「define+run 框架 + 一次批准」，零点击。
+    // ===== 从清单自举重建（齿轮按钮 + 启动自动补齐共用 doRebuild）=====
+    // 动态模式框架读磁盘 payload.json（本身就是 define 参数的完整 JSON），编译模式读 provider
+    // 内嵌 payload，经 dynamicCordisRunner 批量 define + run Host-only 插件——全新重建缩到
+    // 「define+run 框架 + 一次批准」，零点击。
     // 幂等：按插件 name 跳过本仓库已定义的（含被用户停掉的，尊重开关状态）。
-    // 启停记忆：读 .dsh-dynamic-toolbox/toolbox-plugins.json，记录为关闭的条目只 define 不 run（恢复上次记录）。
+    // 启停记忆：读 provider 启停配置，记录为关闭的条目只 define 不 run（恢复上次记录）。
     // v6.3：串行 + build 上下文——工具插件在 apply 里注册必须归入本仓库 root，串行保证
     // buildRoot 全程稳定；beginBuild/endBuild 互斥队列让多仓库并行冷启也不会串组。
     const doRebuild = async (sid, root) => {
       const t0 = Date.now()
-      const fs = ctx.get('fs')
-      if (!runner || !fs) return { ok: false, error: 'dynamicCordisRunner/fs 服务不可用' }
+      if (!runner) return { ok: false, error: 'dynamicCordisRunner 服务不可用' }
       const agent = agentFor(sid)
       const found = await findManifest(root || undefined)
       if (!found || !found.manifest || !Array.isArray(found.manifest.plugins)) {
-        return { ok: false, error: '找不到 plugins.json' + (root ? '（root: ' + root + '）' : '') }
+        return { ok: false, error: (artifacts.mode === 'compiled-bundle' ? '编译清单不可用（root 未 attach）' : '找不到 plugins.json') + (root ? '（root: ' + root + '）' : '') }
       }
       const manifest = found.manifest
       const manifestRoot = found.root
@@ -565,8 +536,7 @@ return {
           if (entry.id === 'toolbox') { skipped.push('toolbox（框架自身）'); continue }
           if (existingNames.has(entry.name)) { skipped.push(entry.id); continue }
           try {
-            const pt = await fs.resolve(entry.payload, { cwd: manifestRoot })
-            const payload = JSON.parse(await fs.readText(pt))
+            const payload = await artifacts.payload(manifestRoot, entry)
             const rec = runner.define({ sessionId: sid, plugin: payload.plugin, name: payload.name, purpose: payload.purpose, code: payload.code })
             defined.push(entry.id + '→' + rec.pluginId)
             existingNames.add(entry.name)
@@ -590,13 +560,13 @@ return {
       return { ok: failed.length === 0, defined, started, skipped, suppressed, failed, approvalPending, ms: Date.now() - t0 }
     }
 
-    ctx.effect(() => harness.handle('toolbox/rebuild', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('rebuild'), async (args) => {
       const sid = sessionOf(args)
       return doRebuild(sid, await resolveRoot(args))
     }))
 
     // AI 用量台账聚合（管理视图总行）：读 .dsh-dynamic-toolbox/toolbox-ai-usage.json，按工具聚合 次数/输出token/失败
-    ctx.effect(() => harness.handle('toolbox/ai-usage', async () => {
+    ctx.effect(() => harness.handle(RT.rpc('ai-usage'), async () => {
       const fs = ctx.get('fs')
       if (!fs) return { ok: true, tools: [], totals: null }
       try {
@@ -633,27 +603,29 @@ return {
         return { ok: true, tools, totals: { calls, out, errors: errs, todayCalls, todayOut } }
       } catch (e) { return { ok: true, tools: [], totals: null } }
     }))
-    // 重建耗时历史（管理视图迷你柱状图数据源）：读 .dsh-dynamic-toolbox/toolbox-autorebuild.json 的 history
-    ctx.effect(() => harness.handle('toolbox/rebuild-history', async () => {
+    // 重建耗时历史（管理视图迷你柱状图数据源）：读 <dataDir>/toolbox-autorebuild.json 的 history（框架状态，按 bundle 隔离）
+    ctx.effect(() => harness.handle(RT.rpc('rebuild-history'), async () => {
       const fs = ctx.get('fs')
       if (!fs) return { ok: false, error: 'fs 服务不可用' }
       try {
         const found = await findManifest(myRoot)
         if (!found) return { ok: true, history: [] }
-        const t = await fs.resolve('.dsh-dynamic-toolbox/toolbox-autorebuild.json', { cwd: found.root })
+        const t = await fs.resolve(RT.dataDir + '/toolbox-autorebuild.json', { cwd: found.root })
         if (!await fs.stat(t)) return { ok: true, history: [] }
         const parsed = JSON.parse(await fs.readText(t))
         return { ok: true, history: (parsed && Array.isArray(parsed.history)) ? parsed.history : [] }
       } catch (e) { return { ok: true, history: [] } }
     }))
 
-    // ===== 启动自动补齐：框架每次启动自调一次 doRebuild（幂等，已定义的按名跳过）=====
+    // ===== 启动自动补齐：动态模式框架每次启动自调一次 doRebuild（幂等，已定义的按名跳过）=====
+    // 编译模式跳过：功能的 define/run 由静态 Bootstrap 负责（内嵌清单，不读磁盘）；
+    // 编译模式下注册表由 Bootstrap provide、core 重启不丢表，也不需要本段的确定性重挂。
     // sid 发现：优先 agents.currentInitiator()（cordis_run 由 agent 驱动时携带发起者）；
     // 兜底：inventory 里按 plugins.json 的 toolbox 条目 name 找框架自身所在行——
     // 恰好一行才采用（多会话同名框架并存时无法区分归属，宁可跳过也不补齐到别的会话）。
     let stopped = false
     ctx.effect(() => () => { stopped = true })
-    ;(async () => {
+    if (artifacts.capabilities.rebuildFromDisk !== false) ;(async () => {
       // 分阶段落盘报告（subprocess 直写，绕过 fs 沙箱策略）：每到一个阶段整份重写，
       // 文件停在哪一阶段，问题就在哪一阶段之后。报告路径 <工作区>/.dsh-dynamic-toolbox/toolbox-autorebuild.json
       const stages = []
@@ -699,7 +671,7 @@ return {
         try {
           const fs2 = ctx.get('fs')
           if (fs2) {
-            const t = await fs2.resolve('.dsh-dynamic-toolbox/toolbox-autorebuild.json', { cwd: root })
+            const t = await fs2.resolve(RT.dataDir + '/toolbox-autorebuild.json', { cwd: root })
             if (await fs2.stat(t)) {
               const prev = JSON.parse(await fs2.readText(t))
               if (prev && Array.isArray(prev.history)) history = prev.history
@@ -720,7 +692,7 @@ return {
         const payload = JSON.stringify({ at, stages, history }, null, 2)
         try {
           const handle = sub.spawn({
-            argv: ['node', '-e', "const fs=require('fs');fs.mkdirSync(require('path').dirname(process.argv[1]),{recursive:true});fs.writeFileSync(process.argv[1],process.argv[2])", root.replace(/[\\/]+$/, '') + '/.dsh-dynamic-toolbox/toolbox-autorebuild.json', payload],
+            argv: ['node', '-e', "const fs=require('fs');fs.mkdirSync(require('path').dirname(process.argv[1]),{recursive:true});fs.writeFileSync(process.argv[1],process.argv[2])", root.replace(/[\\/]+$/, '') + '/' + RT.dataDir + '/toolbox-autorebuild.json', payload],
             stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
             graceMs: 10000,
           })
@@ -833,7 +805,7 @@ return {
     // 会话信息查询（v6.5）：client 按当前会话 id 查 header.cwd。
     // 抽屉主实例挂在宿主会话下，useSessions 视角的 byId 记录可能不可靠——
     // cwd 以 Host 侧 sessions / sessionQuery 为准（client 每次切会话后调用）。
-    ctx.effect(() => harness.handle('toolbox/session-info', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('session-info'), async (args) => {
       const sid = args && typeof args.session === 'string' && args.session ? args.session : ''
       if (!sid) return { ok: false, error: '缺少会话 id' }
       const ss = ctx.get('sessions')
@@ -856,7 +828,7 @@ return {
       return { ok: false, error: '会话不存在或不可读: ' + sid }
     }))
 
-    ctx.effect(() => harness.handle('toolbox/panel', async (args) => {
+    ctx.effect(() => harness.handle(RT.rpc('panel'), async (args) => {
       const root = await resolveRoot(args)
       return registry.panel(root, args)
     }))

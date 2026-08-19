@@ -53,7 +53,7 @@ const check = (label, cond, detail) => {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 ;(async () => {
-  const src = read('shared/host.js') + '\n' + read('plugins/calc/tool.js')
+  const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/calc/tool.js')
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(ctx, undefined, console)
   await plugin.apply(ctx)
   const h = handlers.calc

@@ -35,7 +35,7 @@ const baseCtx = {
   interval(fn) { try { fn() } catch (e) {} return () => {} },
 }
 
-const src = read('shared/host.js') + '\n' + read('plugins/selfview/tool.js')
+const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/selfview/tool.js')
 async function evalPlugin() {
   const hs = {}
   const reg = { register(d, h) { hs[d.id] = h; return () => {} } }

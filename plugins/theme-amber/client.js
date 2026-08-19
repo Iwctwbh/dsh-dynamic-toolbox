@@ -6,8 +6,11 @@
 return {
   name: 'tb-theme-amber',
   apply(ctx) {
+    const themeRoot = TOOLBOX_RUNTIME.bundleId === 'dynamic'
+      ? ':root'
+      : '[data-dsh-toolbox-scope="' + TOOLBOX_RUNTIME.domValue() + '"]'
     const dispose = styles.insert([
-      ':root{',
+      themeRoot + '{',
       '  --tb-accent:#d97706;',
       '  --tb-accent-hover:#f59e0b;',
       '  --tb-accent-text:#fbbf24;',

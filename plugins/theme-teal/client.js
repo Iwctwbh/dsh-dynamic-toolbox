@@ -6,8 +6,11 @@
 return {
   name: 'tb-theme-teal',
   apply(ctx) {
+    const themeRoot = TOOLBOX_RUNTIME.bundleId === 'dynamic'
+      ? ':root'
+      : '[data-dsh-toolbox-scope="' + TOOLBOX_RUNTIME.domValue() + '"]'
     const dispose = styles.insert([
-      ':root{',
+      themeRoot + '{',
       '  --tb-accent:#0d9488;',
       '  --tb-accent-hover:#14b8a6;',
       '  --tb-accent-text:#5eead4;',

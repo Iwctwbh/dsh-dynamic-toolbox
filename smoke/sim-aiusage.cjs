@@ -34,7 +34,7 @@ const check = (label, cond, detail) => {
 }
 
 ;(async () => {
-  const src = read('shared/host.js') + '\n' + read('plugins/aiusage/tool.js')
+  const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/aiusage/tool.js')
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(ctx, undefined, console)
   await plugin.apply(ctx)
   const h = handlers.aiusage

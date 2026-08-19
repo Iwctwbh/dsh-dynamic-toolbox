@@ -59,7 +59,10 @@ selfview 是除框架外唯一含 Client 半的 autoStart 条目，自动启动�
 
 ```
 plugins.json            重建总清单（只留决策元数据：id/name/payload/order/autoStart/approval；define 参数读条目 payload.json）
-make-payloads.mjs       单一事实源：PLUGINS 表 → 生成 plugin.json/payload.json/总清单 + 语法检查
+make-payloads.mjs       动态模式生成器薄壳：调 build/generate-dynamic.mjs 产出 plugin.json/payload.json/总清单 + 语法检查
+build/plugin-catalog.mjs 单一事实源：PLUGINS 表（含 bundle 元数据）；动态与编译两种模式共用
+build/                  构建公共模块：source-loader / payload-builder / profile / build-bundle / templates
+scripts/                build-toolbox-bundle.mjs（编译合集 CLI）· verify-generated.mjs（动态生成物漂移检查）· verify-bundle.mjs（编译产物契约/npm pack 检查）
 smoke.mjs               契约冒烟入口：node smoke.mjs 跑 smoke/sim-*.cjs 全部套件（exit 0 全绿）
 smoke/                  仿真用例：mock ctx/服务真实求值插件 impl（面板协议/联动竞态/持久化/state 轻量化/主题生命周期）
 loader.js               磁盘级加载器（桩固定入口，改它不用重新 define）
@@ -83,7 +86,7 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 
 计算台（Tab「计算」）：子模式芯片切换 编解码/正则/Cron/文本对比/生成器；各子模式状态独立命名空间（`st.codec/regex/cron/txtdiff/gen`）；派生大结果（cron 字段 Set、diff 行、生成列表）留闭包不进 state。
 
-加载链路：`payload 桩（~0.9KB，只探测根目录）` → `loader.js` → `shared/host.js + plugins/<key>/tool.js`。桩与 loader 的 new Function 帧显式下传 ctx/harness/console。框架 Client 半同样是加载桩：经 Host 半 `toolbox/client-impl` RPC 实时拉磁盘 `plugins/toolbox/client.js` 求值（ctx/React/host/styles/console 显式下传），改 UI 重跑 tbx 即生效、无需重新 define/批准。Client 加载桩的 Timer 走 Cordis 生命周期：桩用 `ctx.get('timer')` 建浏览器兼容适配器（数字句柄 ↔ disposer 映射），把 setTimeout/setInterval/clearTimeout/clearInterval 作为第二层 new Function 的显式形参下传——不读浏览器全局（绕过 Dynamic Client Guard 的兼容风险），Package 停止/重跑时未决回调经 fiber teardown 全清、连续重跑不累积。
+加载链路：`payload 桩（~0.9KB，只探测根目录）` → `loader.js` → `shared/runtime.js + shared/host.js + plugins/<key>/tool.js`（toolbox 框架额外含 shared/registry.js）。桩与 loader 的 new Function 帧显式下传 ctx/harness/console。框架 Client 半同样是加载桩：经 Host 半 `toolbox/client-impl` RPC 实时拉磁盘 `shared/runtime.js + plugins/toolbox/client.js` 求值（ctx/React/host/styles/console 显式下传），改 UI 重跑 tbx 即生效、无需重新 define/批准。Client 加载桩的 Timer 走 Cordis 生命周期：桩用 `ctx.get('timer')` 建浏览器兼容适配器（数字句柄 ↔ disposer 映射），把 setTimeout/setInterval/clearTimeout/clearInterval 作为第二层 new Function 的显式形参下传——不读浏览器全局（绕过 Dynamic Client Guard 的兼容风险），Package 停止/重跑时未决回调经 fiber teardown 全清、连续重跑不累积。
 
 ## 重建（define + run，按 `plugins.json` 清单）
 
@@ -107,7 +110,11 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 
 ## 元数据变化
 
-插件增减/改 inject/改文件名 → 编辑 `make-payloads.mjs` 的 PLUGINS 表 → `node make-payloads.mjs` 重新生成全部 `plugin.json` / `payload.json` / `plugins.json` → 新插件 cordis_define + run，已有插件不用动。
+插件增减/改 inject/改文件名 → 编辑 `build/plugin-catalog.mjs` 的 PLUGINS 表 → `node make-payloads.mjs` 重新生成全部 `plugin.json` / `payload.json` / `plugins.json` → 新插件 cordis_define + run，已有插件不用动。`node scripts/verify-generated.mjs` 可守门生成物漂移（改 catalog/源码忘重跑会报）。
+
+## 原生静态合集（installable bundle）
+
+`node scripts/build-toolbox-bundle.mjs --features flow,jira` 把同一源码生成为普通 DSH 双端包：`lib/index.js` 由 Loader 直接挂载 Host，`lib/client.js` 经 package.json 的 `dsh.client` / `exports["./client"]` 原生加载，`lib/remote.js` 提供 Host↔Client Remote。它**不使用 `dynamicCordisRunner`，不产生 `dyn/*`，不需要动态 Client 批准**，也不读取 `loader.js` / `plugins.json` / `payload.json`。静态功能集合在构建时固定，没有动态管理和磁盘热重载；升级 = 提高版本、重新 `npm pack`、`dsh plugin add`、重启 DSH。动态开发模式及本页其他重建流程完全保留。当前 `selfview` 仍依赖动态专用 harness bridge，静态编译器会在构建期拒绝，直至迁移为原生 Remote。
 
 ## 数据与凭据
 

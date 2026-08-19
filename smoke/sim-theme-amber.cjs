@@ -18,7 +18,7 @@ const check = (label, cond, detail) => {
 }
 
 ;(async () => {
-  const fn = new Function('ctx', 'React', 'host', 'styles', 'console', 'return (async () => {\n' + read('plugins/theme-amber/client.js') + '\n})()')
+  const fn = new Function('ctx', 'React', 'host', 'styles', 'console', 'return (async () => {\n' + read('shared/runtime.js') + '\n' + read('plugins/theme-amber/client.js') + '\n})()')
   const impl = await fn(ctx, undefined, undefined, styles, console2)
   check('返回插件对象', impl && typeof impl.apply === 'function')
   impl.apply(ctx)

@@ -24,7 +24,7 @@ const tryRegisterTool = (ctx, desc, handler) => {
     // ctx.get 在服务重 provide 的窗口期可能 throw（isolate key 变化）——必须捕获，
     // 否则一次异常就让 interval 心跳中断，注册再也无法自愈
     let reg
-    try { reg = ctx.get('toolboxRegistry') } catch (e) { return }
+    try { reg = ctx.get(TOOLBOX_RUNTIME.registryService) } catch (e) { return }
     if (!reg || typeof reg.register !== 'function') return
     if (reg === regSeen && off) return
     if (off) { try { off() } catch (e) {} off = null }
@@ -145,6 +145,8 @@ const makeSessionLogReader = (ctx, sq) => {
 // 数据目录名由仓库根的 toolbox.config.json 配置（dataDir，默认 .dsh-dynamic-toolbox）。
 let _repoCache = null // 进程内缓存（仓库位置运行期不变）
 const findRepoRoot = async (ctx) => {
+  // 原生安装包适用于任意工作区，不把源码仓库 plugins.json 当部署标记。
+  if (typeof TOOLBOX_RUNTIME !== 'undefined' && TOOLBOX_RUNTIME.mode === 'static-bundle') return null
   if (_repoCache) return _repoCache
   const fsService = ctx.get('fs')
   if (!fsService) return null

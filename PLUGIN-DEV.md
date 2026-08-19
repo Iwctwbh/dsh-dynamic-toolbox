@@ -26,7 +26,7 @@
 ## 新工具三步
 
 1. 建文件夹 `plugins/<key>/`，写 `tool.js`（plain JS，禁 import/require/TS，文件末尾 `return` 插件对象）；
-2. `make-payloads.mjs` 的 PLUGINS 表加一行（key/idPrefix/order/name/purpose/inject；idPrefix 限 3-6 小写字母）；
+2. `build/plugin-catalog.mjs` 的 PLUGINS 表加一行（key/idPrefix/order/name/purpose/inject/hostFiles；idPrefix 限 3-6 小写字母）。要能被编译合集 CLI 选择，补 `bundle` 元数据：`{ selectable, defaultLabel, aliases, dependencies, conflicts, scope }`——scope 取 `workspace`（Host-only 默认，按工作区实例）或 `process`（含 Client 半强制 process，避免按 root 重复批准）；
 3. `node make-payloads.mjs`（生成 plugin.json + payload.json + 总清单）→ `cordis_define` ← `plugins/<key>/payload.json` → `cordis_run(mode: run)`。Host-only 免批准。
 
 **建议同步写一个 `smoke/sim-<key>.cjs`**（mock ctx/服务求值 impl，断言面板协议与 state 契约；参考 sim-calc 的零服务纯逻辑形态、sim-jira 的 mock credentials+subprocess 形态）。`node smoke.mjs` 一键全量回归。注意沙箱禁命名管道：子进程 stdout/stderr 用临时文件重定向，别用 pipe。

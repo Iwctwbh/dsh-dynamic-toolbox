@@ -63,7 +63,7 @@ const ctx = {
 }
 
 ;(async () => {
-  const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + read('plugins/toolbox/host.js') + '\n})()')(ctx, harness, console)
+  const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + read('shared/runtime.js') + '\n' + read('shared/registry.js') + '\n' + read('plugins/toolbox/host.js') + '\n})()')(ctx, harness, console)
   await plugin.apply(ctx)
   await new Promise((r) => setTimeout(r, 50)) // 启动自举 IIFE 走完（无发起者 → 安静退出）
 

@@ -56,7 +56,7 @@ const check = (label, cond, detail) => {
 const MD = '# 测试流程\n\n## 01 输入\n收集需求\n\n### gate:ifElse 质量达标？\n- 是 → 03 输出\n- 否 → 02 研究\n\n## 02 研究\n深入分析\n\n## 03 输出\n产出结果\n'
 
 ;(async () => {
-  const src = read('shared/host.js') + '\n' + read('plugins/flowedit/tool.js')
+  const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + read('plugins/flowedit/tool.js')
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(ctx, undefined, console)
   await plugin.apply(ctx)
   const h = handlers.flowedit

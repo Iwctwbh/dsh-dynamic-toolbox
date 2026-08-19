@@ -69,6 +69,25 @@ Prerequisites: DeepSeek Harness running with dynamic-plugin (Cordis) support; a 
 
 Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the drawer manage view and the Cordis panel drive the process-global runner directly. Credentials (e.g. Jira) live in the Harness credential store or environment variables — never in this repo. Full guide: [`REBUILD.md`](REBUILD.md), plugin authoring: [`PLUGIN-DEV.md`](PLUGIN-DEV.md).
 
+## Compiled bundles (installable feature subsets)
+
+The same `plugins/` sources can be compiled into a **native static DSH Host/Client package**, installable into any DSH profile without this repo:
+
+```powershell
+node scripts/build-toolbox-bundle.mjs --flow              # Flow-only (framework is implicit)
+node scripts/build-toolbox-bundle.mjs --flow --jira       # Flow + Jira
+node scripts/build-toolbox-bundle.mjs --features flow,jira --version 0.1.0
+cd dist/toolbox-bundles/flow-jira && npm pack             # → installable tgz
+dsh plugin --profile web add <tgz>                        # install/upgrade; remove to uninstall
+```
+
+- `lib/index.js` is a native Host plugin; `lib/client.js` is discovered through `dsh.client` and `exports["./client"]`; `lib/remote.js` carries the native Host/Client Remote contract
+- No `dynamicCordisRunner`, no `dyn/*`, and no dynamic Client approval
+- No `loader.js` or repo probing at runtime; Services/RPC/Slots/DOM/storage/events are namespaced by bundleId
+- Static bundles don't hot-reload from disk: upgrade = rebuild + `dsh plugin add` again + restart DSH
+- `selfview` still depends on the dynamic-only harness bridge and is rejected by the static compiler until its native Remote migration is implemented
+- Gates: `node scripts/verify-generated.mjs` (dynamic-dev drift), `node scripts/verify-bundle.mjs <dir> [--pack]` (native static contract + tarball list), `node smoke.mjs` (21 suites)
+
 ## License
 
 [MIT](LICENSE) © 2026 Iwctwbh
@@ -110,8 +129,81 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 
 两条路互不冲突、随时互切：bootstrapper 幂等跳过已定义，框架 doRebuild 幂等补齐缺失。跑起来之后，日常补齐/重跑/启停在**任何模式**都能进行——抽屉管理视图与 Cordis 面板直驱进程级全局 runner，不经过模型工具。
 
-- 启动集合遵循启停记忆 `<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json`
-- 主题插件（青绿/暖橙）只 define 不启动，互斥按需激活
+**方式 C · 编译合集（把功能子集打成可安装 npm 包）**
+
+1. 查看所有可选功能和参数：
+
+```powershell
+node scripts/build-toolbox-bundle.mjs --help
+```
+
+2. 选择功能并构建。`toolbox` 框架会自动加入，不需要写在 features 中：
+
+```powershell
+# Flow-only → dist/toolbox-bundles/flow/
+node scripts/build-toolbox-bundle.mjs --flow --version 0.1.0 --clean
+
+# Flow + Jira → dist/toolbox-bundles/flow-jira/
+node scripts/build-toolbox-bundle.mjs --flow --jira --version 0.1.0 --clean
+
+# 等价的通用写法；发布 scoped 包时可指定 --name
+node scripts/build-toolbox-bundle.mjs `
+  --features flow,jira `
+  --id flow-jira `
+  --name @your-scope/dsh-flow-jira-toolbox `
+  --label "Flow + Jira 工具箱" `
+  --version 0.1.0 `
+  --clean
+```
+
+`--out` 如需指定，只允许写到 `dist/toolbox-bundles/<名称>` 下；`--clean` 只会清理经过校验的这个精确目录。
+
+3. 验证并打包：
+
+```powershell
+# Flow-only
+node scripts/verify-bundle.mjs dist/toolbox-bundles/flow --pack
+Push-Location dist/toolbox-bundles/flow
+npm pack
+Pop-Location
+
+# Flow + Jira
+node scripts/verify-bundle.mjs dist/toolbox-bundles/flow-jira --pack
+Push-Location dist/toolbox-bundles/flow-jira
+npm pack
+Pop-Location
+```
+
+`npm pack` 会在对应目录生成类似 `dsh-flow-toolbox-0.1.0.tgz` 或 `dsh-flow-jira-toolbox-0.1.0.tgz` 的文件。
+
+4. 安装，然后重启 DSH。以下命令从本仓库根执行：
+
+```powershell
+# Flow-only
+dsh plugin --profile web add .\dist\toolbox-bundles\flow\dsh-flow-toolbox-0.1.0.tgz
+
+# Flow + Jira
+dsh plugin --profile web add .\dist\toolbox-bundles\flow-jira\dsh-flow-jira-toolbox-0.1.0.tgz
+```
+
+重启后，DSH Loader 会直接挂载包内原生 Host 与 Client，侧栏出现构建时设置的名称；**不会出现动态 Client 批准，也不会产生 `dyn/*` 插件**。
+
+5. 升级：提高 `--version`，重新构建、验证、`npm pack`，再对新 tgz 执行同一个 `dsh plugin ... add` 命令并重启 DSH。DSH 会直接加载新版本静态 Host/Client。
+
+6. 卸载并重启 DSH：
+
+```powershell
+dsh plugin --profile web remove dsh-flow-toolbox
+dsh plugin --profile web remove dsh-flow-jira-toolbox
+
+# scoped 包使用实际包名
+dsh plugin --profile web remove @your-scope/dsh-flow-jira-toolbox
+```
+
+编译合集自包含（不读本仓库 `loader.js` / `plugins.json` / `payload.json`），Service、Remote、Slot、DOM、storage、事件和 CSS 全部按 bundleId 隔离，可与动态模式及其他合集同进程共存。工具业务数据仍落工作区 `.dsh-dynamic-toolbox/`；静态合集没有动态管理/热重载，升级必须重新构建、安装并重启。`selfview` 仍依赖动态专用 harness bridge，迁移为原生 Remote 前静态编译器会明确拒绝它。
+
+- 动态开发模式仍遵循 `<工作区>/.dsh-dynamic-toolbox/toolbox-plugins.json` 启停记忆；原生静态合集的功能集合由构建命令固定
+- 静态合集显式选择主题即随原生 Client 加载；动态模式主题仍按原有方式 define 后按需启动
 - 凭据（Jira 等）走 Harness 凭据存储或环境变量，**不写入本仓库任何文件**
 - 手动逐条路径、启停记忆、headless 注意事项等完整细节见 [`REBUILD.md`](REBUILD.md)
 
@@ -126,7 +218,7 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 
 ## 扩展：开发自己的工具插件
 
-耦合面只有两条——`ctx.get('toolboxRegistry').register(desc, handler)` 和 HTML 面板协议。新插件三步：建 `plugins/<key>/tool.js` → `make-payloads.mjs` 的 PLUGINS 表加一行 → `node make-payloads.mjs` 后 define+run；骨架约 15 行，Host-only 不用写 Client 代码。完整指南（面板契约/踩坑/主题/冒烟）：[`PLUGIN-DEV.md`](PLUGIN-DEV.md)。
+耦合面只有两条——`ctx.get(TOOLBOX_RUNTIME.registryService).register(desc, handler)`（经 shared/host.js 的 tryRegisterTool）和 HTML 面板协议。新插件三步：建 `plugins/<key>/tool.js` → `build/plugin-catalog.mjs` 的 PLUGINS 表加一行 → `node make-payloads.mjs` 后 define+run；骨架约 15 行，Host-only 不用写 Client 代码。完整指南（面板契约/踩坑/主题/冒烟）：[`PLUGIN-DEV.md`](PLUGIN-DEV.md)。
 
 ## 插件清单（22）
 
@@ -156,7 +248,7 @@ Either way: daily rebuild/rerun/toggle afterwards works in **any mode** — the 
 改 plugins/<key>/tool.js（或 framework、shared、loader）
   → 抽屉齿轮「重跑」该行即生效（不用重新 define/批准）
   → 批量改完点「全部重跑」
-插件增减/改 inject → 编辑 make-payloads.mjs 的 PLUGINS 表
+插件增减/改 inject → 编辑 build/plugin-catalog.mjs 的 PLUGINS 表
   → node make-payloads.mjs 重新生成 + 语法检查
 改 shared/framework/面板协议 → 必跑 node smoke.mjs
 ```

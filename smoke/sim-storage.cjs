@@ -85,7 +85,7 @@ return {
   const handlers = {}
   const c2 = Object.create(ctx)
   c2.get = (name) => (name === 'toolboxRegistry' ? { register(d, h) { handlers[d.id] = h; return () => {} } } : ctx.get(name))
-  const src = read('shared/host.js') + '\n' + probe
+  const src = read('shared/runtime.js') + '\n' + read('shared/host.js') + '\n' + probe
   const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + src + '\n})()')(c2, undefined, console)
   await plugin.apply(c2)
   const P = c2.__probe

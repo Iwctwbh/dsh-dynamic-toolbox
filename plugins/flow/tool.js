@@ -472,6 +472,19 @@ return {
           sessionLive = !!(agent && agent.status === 'running')
         }
       } catch (e) {}
+      // provider/配额等请求错误有时先把 agent 置 idle，step/end / turn/end 尚未进入本次日志快照。
+      // agent 状态是权威终态：强制结算残留流式草稿，避免“正在生成”和客户端计时无限增长。
+      if (hasAgentStatus && !sessionLive) {
+        const tail = r.events && r.events.length ? r.events[r.events.length - 1] : null
+        const settledAt = tail && Number.isFinite(Number(tail.time)) ? Number(tail.time) : null
+        for (const it of items) {
+          if (it.kind !== 'msg' || it.role !== 'ai' || !it.streaming) continue
+          it.streaming = false
+          it.interrupted = true
+          it.runDur = Math.max(0, (settledAt != null ? settledAt : it.runStart) - it.runStart)
+          it.preview = (it.full ? oneLine(it.full, 100) + ' ' : '') + '（生成失败或已中断）'
+        }
+      }
       const liveAiSeq = (hasAgentStatus ? sessionLive : active) && lastIt && lastIt.kind === 'msg' && lastIt.role === 'ai' && !lastIt.interrupted ? lastIt.seq : null
       const CAP = 60
       const shown = nodes.slice(-CAP)

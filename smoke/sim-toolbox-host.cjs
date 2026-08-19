@@ -138,7 +138,7 @@ const check = (label, cond, detail) => {
 
 ;(async () => {
   const load = async () => {
-    const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + read('plugins/toolbox/host.js') + '\n})()')(ctx, harness, console)
+    const plugin = await new Function('ctx', 'harness', 'console', 'return (async () => {\n' + read('shared/runtime.js') + '\n' + read('shared/registry.js') + '\n' + read('plugins/toolbox/host.js') + '\n})()')(ctx, harness, console)
     await plugin.apply(ctx)
   }
   await load() // 框架 1：提供全局注册表 + attach W

@@ -1,5 +1,5 @@
 // ===== build/templates/package.json.mjs：原生 DSH 双端包 manifest =====
-export const renderPackageJson = ({ packageName, version, description, bundleId }) => JSON.stringify({
+export const renderPackageJson = ({ packageName, version, description, bundleId, repositoryDirectory }) => JSON.stringify({
   name: packageName,
   version,
   description,
@@ -14,6 +14,7 @@ export const renderPackageJson = ({ packageName, version, description, bundleId 
   repository: {
     type: 'git',
     url: 'https://github.com/Iwctwbh/dsh-flowglass.git',
+    ...(repositoryDirectory ? { directory: repositoryDirectory } : {}),
   },
   license: 'MIT',
   author: 'Iwctwbh',

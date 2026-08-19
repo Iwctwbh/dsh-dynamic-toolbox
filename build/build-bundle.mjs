@@ -83,7 +83,7 @@ export const buildBundle = (loader, opts) => {
   }
   const featureLines = featureEntries.map((entry) => '  - `' + entry.key + '` — ' + entry.name).join('\n')
   const files = new Map([
-    ['package.json', renderPackageJson({ packageName, version, description: label + '（DSH 原生静态工具箱）', bundleId })],
+    ['package.json', renderPackageJson({ packageName, version, description: label + '（DSH 原生静态工具箱）', bundleId, repositoryDirectory: opts.repositoryDirectory })],
     ['cordis.patch.yml', renderCordisPatch({ bundleId, packageName })],
     ['README.md', renderReadme({ packageName, version, bundleId, displayName: label, featureLines, approvalCount: 0 })],
     ['manifest.json', JSON.stringify(manifest, null, 2) + '\n'],

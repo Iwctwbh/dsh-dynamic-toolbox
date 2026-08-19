@@ -1,6 +1,6 @@
 {
   "name": "dsh-dynamic-toolbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "动态工具箱（DSH 原生静态工具箱）",
   "type": "module",
   "main": "./lib/index.js",
@@ -12,7 +12,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Iwctwbh/dsh-flowglass.git"
+    "url": "https://github.com/Iwctwbh/dsh-flowglass.git",
+    "directory": "dynamic-toolbox"
   },
   "license": "MIT",
   "author": "Iwctwbh",

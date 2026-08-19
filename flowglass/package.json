@@ -1,6 +1,6 @@
 {
   "name": "dsh-flowglass",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "流镜（DSH 原生静态工具箱）",
   "type": "module",
   "main": "./lib/index.js",
@@ -12,7 +12,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Iwctwbh/dsh-flowglass.git"
+    "url": "https://github.com/Iwctwbh/dsh-flowglass.git",
+    "directory": "flowglass"
   },
   "license": "MIT",
   "author": "Iwctwbh",

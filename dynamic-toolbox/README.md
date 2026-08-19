@@ -3,7 +3,7 @@
 由 dsh-flowglass 构建的 **DSH 原生静态 Host/Client 插件**。
 
 - bundleId: `dynamic-toolbox`
-- 版本: 0.1.0
+- 版本: 0.1.1
 - 动态批准: **不需要**（不使用 dynamicCordisRunner，不产生 dyn/*）
 - 功能:
   - `jira` — Jira 需求读取与归档工具 (Host-only)

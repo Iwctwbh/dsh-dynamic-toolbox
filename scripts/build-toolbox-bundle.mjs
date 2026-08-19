@@ -30,6 +30,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--name') opts.name = argv[++i]
   else if (a === '--label') opts.label = argv[++i]
   else if (a === '--version') opts.version = argv[++i]
+  else if (a === '--repo-dir') opts.repositoryDirectory = argv[++i]
   else if (a === '--out') opts.out = argv[++i]
   else if (a === '--clean') opts.clean = true
   else if (a === '--dry-run') opts.dryRun = true
@@ -46,6 +47,7 @@ if (opts.help) {
   --name <pkg>     npm package name（默认 dsh-<id>-toolbox；发布必须显式提供）
   --label <文本>   侧栏/抽屉显示名称（单功能默认功能 label，多功能默认「A + B 工具箱」）
   --version <ver>  semver（默认 0.0.0-dev；发布必须显式提供合法 semver）
+  --repo-dir <dir>  发布时 package.json 的 repository.directory（回指仓库子目录，供目录 backlink 验证）
   --out <dir>      输出目录（默认 dist/toolbox-bundles/<id>）
   --clean          构建前清理解析后的精确输出目录
   --dry-run        只打印解析后的 profile、文件清单与验证结果，不写文件

@@ -3,7 +3,7 @@
 由 dsh-flowglass 构建的 **DSH 原生静态 Host/Client 插件**。
 
 - bundleId: `flow`
-- 版本: 0.2.0
+- 版本: 0.2.1
 - 动态批准: **不需要**（不使用 dynamicCordisRunner，不产生 dyn/*）
 - 功能:
   - `flow` — 实时流镜 (Host-only)

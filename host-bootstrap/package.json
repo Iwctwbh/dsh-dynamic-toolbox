@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "description": "Host-plane auto-bootstrap for the dsh-dynamic-toolbox framework: define+run toolbox on session start (0 model calls, 1 approval click)."
+  "description": "Host-plane auto-bootstrap for the dsh-flowglass framework: define+run the Flowglass toolbox on session start (0 model calls, 1 approval click)."
 }

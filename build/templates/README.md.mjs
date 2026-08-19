@@ -1,7 +1,7 @@
 // ===== build/templates/README.md.mjs：生成包说明模板 =====
 export const renderReadme = ({ packageName, version, bundleId, displayName, featureLines }) => `# ${displayName}（${packageName}）
 
-由 dsh-dynamic-toolbox 构建的 **DSH 原生静态 Host/Client 插件**。
+由 dsh-flowglass 构建的 **DSH 原生静态 Host/Client 插件**。
 
 - bundleId: \`${bundleId}\`
 - 版本: ${version}
@@ -14,11 +14,13 @@ ${featureLines}
 \`\`\`powershell
 npm pack
 dsh plugin --profile web add <tgz>
+# 或已发布于 npm registry 时直接在线安装：
+dsh plugin --profile web add ${packageName}
 # 重启 DSH 后由原生 Loader 直接挂载 Host 与 Client
 dsh plugin --profile web remove ${packageName}
 \`\`\`
 
-升级时提高版本、重新 npm pack，然后对新 tgz 再执行 add 并重启 DSH。
+升级时提高版本、重新构建发布，然后对新版本再执行 add 并重启 DSH。
 
 ## 运行结构
 

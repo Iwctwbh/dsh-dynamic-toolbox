@@ -1,5 +1,5 @@
 // ===== build/templates/package.json.mjs：原生 DSH 双端包 manifest =====
-export const renderPackageJson = ({ packageName, version, description }) => JSON.stringify({
+export const renderPackageJson = ({ packageName, version, description, bundleId }) => JSON.stringify({
   name: packageName,
   version,
   description,
@@ -11,6 +11,13 @@ export const renderPackageJson = ({ packageName, version, description }) => JSON
     './remote': './lib/remote.js',
     './package.json': './package.json',
   },
+  repository: {
+    type: 'git',
+    url: 'https://github.com/Iwctwbh/dsh-flowglass.git',
+  },
+  license: 'MIT',
+  author: 'Iwctwbh',
+  keywords: [...new Set(['deepseek-harness', 'dsh', 'plugin', 'toolbox'].concat(bundleId ? [bundleId] : []))],
   dsh: {
     bundle: { patch: './cordis.patch.yml' },
     client: {

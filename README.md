@@ -10,7 +10,7 @@
 
 Every plugin is mounted through a **disk-loading stub**: the payload is a ~0.9KB stub, the implementation lives on disk, so code edits take effect by simply re-running the plugin — no re-define, no re-approval.
 
-## ✨ Centerpiece: Live Flow (流程)
+## Live flow
 
 The drawer's default tab turns the **current session into a living flowgraph**, silently auto-refreshing every 2s (pausable via the live toggle):
 
@@ -20,9 +20,9 @@ The drawer's default tab turns the **current session into a living flowgraph**, 
 - **Parallel groups** — simultaneous tool calls in one step are wrapped in a dashed 「并行 ×N」frame; the running call pulses with a highlight so you always see exactly which step the agent is on
 - **Zero-jump details** — click a tool card for its full arguments/result, click a message card for full content with model + token metadata; details open in a side overlay instead of inflating the flow, so expand/collapse never moves your scroll position
 
-## 🧰 Also a toolbox
+## The toolbox
 
-Beyond Flow, the same drawer hosts 21 hot-reloadable mini-tools (the connecting tissue is a framework plugin: Host-side registry + RPC, Client-side drawer / tab bar / shared HTML panel shell with the `tb-` design system):
+The same drawer hosts 21 hot-reloadable mini-tools on top of a shared framework (Host-side registry + RPC; Client-side drawer, tab bar and the `tb-` panel design system):
 
 | Group | Tools |
 | --- | --- |
@@ -115,7 +115,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 
 ![实时流程 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
 
-## ✨ 主角：实时流程（流程 Tab）
+## 实时流程
 
 抽屉默认 Tab，把**当前会话实时画成流程图**，每 2s 静默自刷（live 开关可暂停）：
 
@@ -125,9 +125,9 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 - **并行分组**：同一步的多个并行调用用虚线框 +「并行 ×N」角标圈成一组；进行中的调用高亮脉冲，一眼看到智能体正跑到哪一步
 - **零跳跃详情**：点工具卡看完整传入/返回，点消息卡看完整内容（含模型/tokens 元信息）；详情挂右侧浮层、不撑高流程内容，展开收起滚动位置不动
 
-## 🧰 配角：会话工具箱
+## 工具箱
 
-流程之外，同一个抽屉承载 21 个热重载小工具（连接骨架是框架插件：Host 注册表 + RPC、Client 抽屉/Tab/通用 HTML 面板壳 + `tb-` 设计系统）：
+流程之外，同一个抽屉承载 21 个热重载小工具（由框架插件统一承载：Host 注册表 + RPC、Client 抽屉/Tab/通用 HTML 面板壳 + `tb-` 设计系统）：
 
 | 分组 | 工具 |
 | --- | --- |
@@ -156,7 +156,7 @@ dsh plugin --profile web add dsh-flow-jira-toolbox # 流程 + Jira
 
 编译包是原生静态 Host/Client 包：无动态批准、无 `dyn/*`，Service/RPC/Slot/DOM/storage/事件按 bundleId 隔离；不热重载——升级 = add 新版本 + 重启 DSH。
 
-**方式 B · 源码自举（自己的机器，装一次——推荐之二）**
+**方式 B · 源码自举（自己的机器，装一次）**
 
 ```text
 1. pwsh host-bootstrap/install.ps1     # 幂等；卸载加 -Uninstall

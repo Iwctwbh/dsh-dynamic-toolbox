@@ -2,7 +2,7 @@
 
 > A DeepSeek Harness plugin: turn the current session into a **live flowgraph** — three lanes, subagent branches, parallel groups, drill-down — plus a hot-reloadable session toolbox in the same drawer. MIT License.
 >
-> **v2026.08.18** — DSH rc.7 lifecycle hardening: zero-model-call autoboot, canonical multi-workspace isolation, streaming Flow cards with live timers/interruption settlement, session-following drawer fixes, and lifecycle-safe Client timers.
+> **v2026.08.20** — DSH rc.8 compatibility verified: zero-model-call autoboot, canonical multi-workspace isolation, streaming Flow cards with live timers/interruption settlement, session-following drawer fixes, and lifecycle-safe Client timers.
 >
 > 中文文档见下方 [中文文档](#中文文档)。
 
@@ -35,7 +35,7 @@ The same drawer hosts 21 hot-reloadable mini-tools on top of a shared framework 
 
 - **Bootstrap rebuild** — the framework auto-defines and starts all missing plugins from `plugins.json` on startup (idempotent, ~0.3s for all 22), honoring per-plugin enable memory
 - **Zero-model-call autoboot** (optional): `host-bootstrap/` auto-starts the framework on session open — 0 model calls, 1 approval click, any mode
-- **Contract smoke tests**: `node smoke.mjs` runs 21 simulation suites, including real rc.7 Cordis composition and multi-workspace isolation coverage
+- **Contract smoke tests**: `node smoke.mjs` runs 21 simulation suites, including real rc.8 Cordis composition and multi-workspace isolation coverage
 
 ## Install
 
@@ -111,7 +111,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 
 > DeepSeek Harness 插件：把当前会话实时画成**流程图**——三列泳道、子代理分支、并行分组、逐层钻取；同一个抽屉里还挂着一组可热重载的会话小工具。MIT License。
 >
-> **v2026.08.18** — DSH rc.7 生命周期加固：零模型调用自举、canonical 多工作区隔离、Flow 流式助手卡/实时计时/中断收口、抽屉会话跟随修复，以及 Client Timer 生命周期化。
+> **v2026.08.20** — 已验证兼容 DSH rc.8：零模型调用自举、canonical 多工作区隔离、Flow 流式助手卡/实时计时/中断收口、抽屉会话跟随修复，以及 Client Timer 生命周期化。
 
 ![实时流镜 · 三列泳道 · 子代理分支 · 并行分组](docs/screenshot.png)
 
@@ -140,7 +140,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 
 - **自举重建**：框架启动自动补齐 plugins.json 中缺失的全部插件（幂等，22 个约 0.3s），遵循逐插件启停记忆
 - **零模型调用自举**（可选）：`host-bootstrap/` 开会话即自动启动框架——0 次模型调用、1 次批准点击、任何模式
-- **契约冒烟**：`node smoke.mjs` 运行 19 套模拟，含真实 rc.7 Cordis 组合与多工作区隔离覆盖
+- **契约冒烟**：`node smoke.mjs` 运行 21 套模拟，含真实 rc.8 Cordis 组合与多工作区隔离覆盖
 
 ## 安装
 

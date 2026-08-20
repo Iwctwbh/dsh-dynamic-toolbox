@@ -96,7 +96,7 @@ const settle = () => new Promise((r) => setTimeout(r, 80))
     const ctx = makeCtx(runner)
     mod.apply(ctx)
     const warns = await captureWarns(async () => { ctx.fireSessionStart(); await settle() })
-    check('缺 run 时报明确能力错误', warns.some((w) => w.indexOf('工具箱需要 DSH rc.7 动态运行接口，缺少：run') >= 0), warns.join(' | '))
+    check('缺 run 时报明确能力错误', warns.some((w) => w.indexOf('工具箱需要 DSH 动态运行接口，缺少：run') >= 0), warns.join(' | '))
     check('能力错误发生在 inventory/define 之前', calls.length === 0, calls.join(','))
   }
 

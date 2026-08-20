@@ -111,7 +111,7 @@ async function bootstrap(ctx, agent) {
   )
   if (missingRunnerMethods.length) {
     throw new Error(
-      '工具箱需要 DSH rc.7 动态运行接口，缺少：' + missingRunnerMethods.join(', '),
+      '工具箱需要 DSH 动态运行接口，缺少：' + missingRunnerMethods.join(', '),
     )
   }
   // 只服务根会话：子代理/工作流子会话不挂工具箱（否则每个 subagent 都弹卡）

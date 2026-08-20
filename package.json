@@ -1,19 +1,18 @@
 {
   "name": "dsh-flowglass",
   "version": "0.2.2",
-  "description": "流镜（DSH 原生静态工具箱）",
+  "description": "流镜（DSH 原生静态插件）",
   "type": "module",
-  "main": "./lib/index.js",
+  "main": "./flowglass/lib/index.js",
   "exports": {
-    ".": "./lib/index.js",
-    "./client": "./lib/client.js",
-    "./remote": "./lib/remote.js",
+    ".": "./flowglass/lib/index.js",
+    "./client": "./flowglass/lib/client.js",
+    "./remote": "./flowglass/lib/remote.js",
     "./package.json": "./package.json"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Iwctwbh/dsh-flowglass.git",
-    "directory": "flowglass"
+    "url": "https://github.com/Iwctwbh/dsh-flowglass.git"
   },
   "license": "MIT",
   "author": "Iwctwbh",
@@ -21,12 +20,11 @@
     "deepseek-harness",
     "dsh",
     "plugin",
-    "toolbox",
     "flow"
   ],
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./flowglass/cordis.patch.yml"
     },
     "client": {
       "platform": "web",
@@ -39,10 +37,12 @@
     }
   },
   "files": [
-    "lib/**",
-    "manifest.json",
-    "BUILDINFO.json",
-    "cordis.patch.yml",
+    "flowglass/lib/**",
+    "flowglass/manifest.json",
+    "flowglass/BUILDINFO.json",
+    "flowglass/cordis.patch.yml",
+    "flowglass/README.md",
+    "flowglass/LICENSE",
     "README.md",
     "LICENSE"
   ],

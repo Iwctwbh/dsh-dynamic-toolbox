@@ -34,6 +34,12 @@ export const renderPackageJson = ({ packageName, version, description, bundleId,
   files: ['lib/**', 'manifest.json', 'BUILDINFO.json', 'cordis.patch.yml', 'README.md', 'LICENSE'],
   engines: { node: '>=22.19' },
   peerDependencies: {
+    ...(bundleId === 'flow' ? { 'dsh-better-sidebar': '>=0.4.0' } : {}),
     react: '^18.3.1',
   },
+  ...(bundleId === 'flow' ? {
+    peerDependenciesMeta: {
+      'dsh-better-sidebar': { optional: true },
+    },
+  } : {}),
 }, null, 2) + '\n'

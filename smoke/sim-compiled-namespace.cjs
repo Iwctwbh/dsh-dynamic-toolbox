@@ -98,14 +98,33 @@ const runHost = async (overrides, env) => {
   const mockDocument = { body, querySelector: () => null, querySelectorAll: () => [], createElement: () => mkEl() }
   const MockMO = class { observe() {} disconnect() {} }
 
+  const sidebarRegistrations = []
+  const betterSidebar = {
+    features: [],
+    isTabEnabled() { return true },
+    registerTab(descriptor) {
+      sidebarRegistrations.push(descriptor)
+      return () => {
+        const at = sidebarRegistrations.indexOf(descriptor)
+        if (at >= 0) sidebarRegistrations.splice(at, 1)
+      }
+    },
+  }
   const mkClientCtx = () => {
     const teardowns = []
     const ctx = {
       teardowns,
       slotsFor: null,
-      get(name) { if (name === 'slots') return ctx.slotsFor; return undefined },
+      get(name) {
+        if (name === 'slots') return ctx.slotsFor
+        if (name === 'betterSidebar') return betterSidebar
+        return undefined
+      },
       effect(fn) { const d = fn(); if (typeof d === 'function') teardowns.push(d) },
       timeout() { return () => {} },
+      inject(deps, callback) {
+        if (deps.indexOf('betterSidebar') >= 0) callback(ctx)
+      },
     }
     return ctx
   }
@@ -123,6 +142,9 @@ const runHost = async (overrides, env) => {
   const cssA = []; const cssB = []
   await evalClient(clientSrcA, ctxA, cssA)
   await evalClient(clientSrcB, ctxB, cssB)
+  check('只有 flow bundle 注册 better-sidebar Tab',
+    sidebarRegistrations.length === 1 && sidebarRegistrations[0].id === 'dsh-flowglass:flow',
+    sidebarRegistrations.map((row) => row.id).join(','))
 
   const marker = () => (body.getAttribute('data-dsh-toolbox-mounted') || '')
   check('两个 bundle 均挂载（marker 列表语义）', marker().split(/\s+/).indexOf('flow') >= 0 && marker().split(/\s+/).indexOf('flow-jira') >= 0, marker())

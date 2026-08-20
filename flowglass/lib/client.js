@@ -311,6 +311,9 @@ return {
       '[data-dsh-frame][data-sidebar-collapsed] [data-dsh-toolbox-entry]{justify-content:center;width:100%;padding:0}',
       '[data-dsh-frame][data-sidebar-collapsed] .tb-nav-label{display:none}',
       '.jr-drawer{position:fixed;right:24px;top:64px;z-index:1300;width:520px;max-width:94vw;max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#17181d);border:1px solid var(--dsw-alias-border-l1,#3a3b44);border-radius:10px;color:var(--dsw-alias-label-primary,#e8e8ea);font-size:13px;pointer-events:auto;box-shadow:-14px 0 44px rgba(0,0,0,.24);animation:jrDrawerIn .16s ease-out;overflow:hidden}',
+      // better-sidebar 嵌入态：只复用面板，不带 fixed 抽屉几何、阴影、拖拽 chrome。
+      '.jr-drawer-embedded{position:relative;inset:auto;z-index:auto;width:100%;height:100%;min-height:0;max-width:none;max-height:none;border:0;border-radius:0;background:transparent;box-shadow:none;animation:none;overflow:hidden}',
+      '.jr-drawer-embedded .jr-drawer-body{flex:1;min-height:0;padding:8px}',
       '.jr-docked{right:0;top:0;bottom:0;max-height:none;border-radius:0;border-top:none;border-right:none;border-bottom:none;border-left:1px solid var(--dsw-alias-border-l1,#3a3b44);box-shadow:-8px 0 24px rgba(0,0,0,.16)}',
       '.jr-docked .jr-drawer-body{flex:1;min-height:0}',
       // 全占右侧：左侧贴侧边栏右缘（left 由渲染时实测侧边栏给出），上下占满，替代主内容区视图
@@ -707,6 +710,39 @@ return {
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) },
     }
 
+    // ===== better-sidebar 可选适配（仅原生 flow bundle） =====
+    // 服务可晚于流镜出现/被 HMR 替换，所以用 ctx.inject 驱动，并用这个小 store
+    // 让已挂载的独立入口/Drawer 同步让位。完整 dynamic-toolbox 不接管为“流镜” Tab。
+    const FLOW_TAB_ID = 'dsh-flowglass:flow'
+    const integrationListeners = new Set()
+    const integration = {
+      service: null,
+      mode: 'auto',
+      enabled: true,
+      active() { return Boolean(this.service) && this.enabled && this.mode !== 'drawer' },
+      emit() { integrationListeners.forEach((fn) => { try { fn() } catch (e) {} }) },
+      subscribe(fn) { integrationListeners.add(fn); return () => integrationListeners.delete(fn) },
+      sync(service) {
+        this.service = service || null
+        this.enabled = !service || typeof service.isTabEnabled !== 'function' || service.isTabEnabled(FLOW_TAB_ID) !== false
+        let mode = 'auto'
+        try {
+          const snap = service && typeof service.getSnapshot === 'function' ? service.getSnapshot() : null
+          const saved = snap && snap.prefs && snap.prefs.pluginSettings && snap.prefs.pluginSettings[FLOW_TAB_ID]
+          if (saved && (saved.displayMode === 'auto' || saved.displayMode === 'sidebar' || saved.displayMode === 'drawer')) mode = saved.displayMode
+        } catch (e) {}
+        this.mode = mode
+        if (this.active()) store.close()
+        this.emit()
+      },
+    }
+
+    function useIntegrationActive() {
+      const [, force] = React.useState(0)
+      React.useEffect(() => integration.subscribe(() => force((t) => t + 1)), [])
+      return integration.active()
+    }
+
     function useOpenState() {
       const [, force] = React.useState(0)
       React.useEffect(() => store.subscribe(() => force((t) => t + 1)), [])
@@ -715,6 +751,8 @@ return {
 
     function Entry(props) {
       const isOpen = useOpenState()
+      const sidebarActive = useIntegrationActive()
+      if (sidebarActive) return null
       return React.createElement(
         'button',
         {
@@ -811,8 +849,10 @@ return {
       const syncActive = () => {
         if (store.isOpen()) entry.setAttribute('data-active', 'true')
         else entry.removeAttribute('data-active')
+        if (entry.style) entry.style.display = integration.active() ? 'none' : ''
       }
       const unsubscribe = store.subscribe(syncActive)
+      const unsubscribeIntegration = integration.subscribe(syncActive)
       syncActive()
       tryPlace()
 
@@ -820,6 +860,7 @@ return {
         waitObserver.disconnect()
         rootObserver.disconnect()
         unsubscribe()
+        unsubscribeIntegration()
         if (sidebarIconEl === iconEl) sidebarIconEl = null
         entry.remove()
       }
@@ -902,7 +943,10 @@ return {
     }
 
     function Drawer(props) {
-      const isOpen = useOpenState()
+      const drawerOpen = useOpenState()
+      const sidebarActive = useIntegrationActive()
+      const embedded = Boolean(props.embedded)
+      const isOpen = embedded ? props.visible !== false : drawerOpen
       // 三态停靠：right 右侧栏 / full 全占右侧（贴侧边栏右缘起占满）/ float 浮动
       // 兼容旧版 docked 布尔（docked:false → float；docked:true/无 → right）与已移除的 bottom → right
       const [dockMode, setDockMode] = React.useState(() => {
@@ -1213,6 +1257,8 @@ return {
       managingRef.current = managing
       const activeRef = React.useRef(null) // 延迟回调里取最新 active（重启落定后的面板刷新）
       activeRef.current = active
+      const openRef = React.useRef(isOpen) // 独立抽屉或嵌入 Tab 的统一可见状态
+      openRef.current = isOpen
       const retryCountRef = React.useRef({}) // toolId -> 面板加载失败重试次数（一次性重试，非轮询；成功清零）
       const attemptedRef = React.useRef({}) // toolId -> 面板请求已发起（首开死锁兜底用：tools 补齐后补打一次，之后不再重复）
 
@@ -1223,14 +1269,14 @@ return {
       // 聊天区收缩而非被覆盖（grid 项 margin 在轨道内生效，不影响侧边栏轨道）；
       // 关闭抽屉/切模式还原，拖拽调宽实时跟随；React 不管该列内联 style，不会被覆盖
       React.useEffect(() => {
-        if (!isOpen || dockMode !== 'full') return undefined
+        if (embedded || !isOpen || dockMode !== 'full') return undefined
         const col = typeof document !== 'undefined' ? document.querySelector('[class*="centerCol"]') : null
         if (!col) return undefined
         const w = width || 560
         const prev = col.style.marginRight
         col.style.marginRight = w + 'px'
         return () => { col.style.marginRight = prev }
-      }, [isOpen, dockMode, width])
+      }, [embedded, isOpen, dockMode, width])
 
       // 静默刷新后恢复滚动位置（loadPanel 在 setHtml 前把各滚动容器 scrollTop 记进 htmlScrollRef）
       React.useEffect(() => {
@@ -1455,7 +1501,7 @@ return {
         return () => { try { window.removeEventListener(SESSION_EVENT, onChanged) } catch (e) {} }
       }, [])
       const hookSession = props.useSessions((s) => (s && s.current ? String(s.current) : undefined))
-      const currentSessionId = (hookSession || lsSession) || undefined
+      const currentSessionId = props.sessionId || (hookSession || lsSession) || undefined
       // cwd：按 currentSessionId 经 Host RPC 查询（宿主视角 byId 记录不可靠）；hook 按自身 current 查作兜底
       const [sessionCwd, setSessionCwd] = React.useState(undefined)
       React.useEffect(() => {
@@ -1471,7 +1517,7 @@ return {
         const row = s.byId && s.byId[s.current]
         return row && typeof row.cwd === 'string' && row.cwd ? row.cwd : undefined
       })
-      const currentCwd = sessionCwd || hookCwd
+      const currentCwd = props.cwd || sessionCwd || hookCwd
       // cwd 用 ref 固定：1.5s 轮询 interval 持有旧闭包，读取 ref 才能跟随「切工作区」拿到最新激活 cwd
       const cwdRef = React.useRef(currentCwd)
       cwdRef.current = currentCwd
@@ -1615,7 +1661,7 @@ return {
         try {
           ctx.timeout(() => {
             const cur = activeRef.current
-            if (cur === toolId && store.isOpen() && typeof loadPanelRef.current === 'function') {
+            if (cur === toolId && openRef.current && typeof loadPanelRef.current === 'function') {
               loadPanelRef.current(toolId, '', null)
             }
           }, 1200)
@@ -1832,7 +1878,7 @@ return {
 
       React.useEffect(() => {
         // 轮询减负：plugins 清单只有管理视图需要——普通模式只刷 tools（RPC  chatter 减半）
-        const disp = ctx.interval(() => { if (store.isOpen()) { refreshTools(); if (managingRef.current) refreshPlugins() } }, 1500)
+        const disp = ctx.interval(() => { if (openRef.current) { refreshTools(); if (managingRef.current) refreshPlugins() } }, 1500)
         // 抽屉打开时的导航恢复（用户指定）：重载后「第一次」打开 → 默认 会话+流程；之后打开 →
         // 恢复上次离开的 分类+工具（lastNav 临时记录）。两路都同步分类芯片与工具 Tab，防面板/Tab 栏错位。
         const offOpen = store.subscribe(() => {
@@ -2056,7 +2102,7 @@ return {
         try { e.currentTarget.releasePointerCapture(e.pointerId) } catch (err) {}
       }
 
-      if (!isOpen) return null
+      if ((!embedded && sidebarActive) || !isOpen) return null
 
       const curW = () => width || 520
 
@@ -2148,7 +2194,7 @@ return {
       )
 
       const handles = []
-      if (dockMode === 'right' || dockMode === 'full') {
+      if (!embedded && (dockMode === 'right' || dockMode === 'full')) {
         handles.push(React.createElement('div', {
           key: 'resize-left',
           className: 'jr-resize-left',
@@ -2158,7 +2204,7 @@ return {
           onPointerUp: onResizeEnd,
           onPointerCancel: onResizeEnd,
         }))
-      } else if (dockMode === 'float') {
+      } else if (!embedded && dockMode === 'float') {
         handles.push(React.createElement('div', {
           key: 'resize-right',
           className: 'jr-resize-right',
@@ -2189,11 +2235,11 @@ return {
       }
 
       const style = {}
-      if ((dockMode === 'right' || dockMode === 'full') && width) style.width = width + 'px' // 停靠宽度可调（左缘拖拽）
-      if (dockMode === 'full' && !width) style.width = '560px' // 三栏停靠默认宽
+      if (!embedded && (dockMode === 'right' || dockMode === 'full') && width) style.width = width + 'px' // 停靠宽度可调（左缘拖拽）
+      if (!embedded && dockMode === 'full' && !width) style.width = '560px' // 三栏停靠默认宽
       // pip 画中画期间主抽屉可视觉隐藏（DOM 与轮询存活——它是镜像事实源）
-      if (mainHidden) { style.visibility = 'hidden'; style.pointerEvents = 'none' }
-      if (dockMode === 'float') {
+      if (!embedded && mainHidden) { style.visibility = 'hidden'; style.pointerEvents = 'none' }
+      if (!embedded && dockMode === 'float') {
         if (height) style.height = height + 'px'
         if (pos) {
           style.left = pos.x + 'px'
@@ -2467,12 +2513,14 @@ return {
 
       const drawerEl = React.createElement('div', {
         ref: drawerRef,
-        className: 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'full' ? ' jr-docked-full' : ''),
+        className: embedded
+          ? 'jr-drawer jr-drawer-embedded'
+          : 'jr-drawer' + (dockMode === 'right' ? ' jr-docked' : dockMode === 'full' ? ' jr-docked-full' : ''),
         // bundle root：CSS scope / 主题变量挂载点（多 bundle 共存隔离；PiP 克隆随 DOM 属性一并镜像）
         'data-dsh-toolbox-root': RT.bundleId,
         style,
       },
-        React.createElement('div', {
+        embedded ? null : React.createElement('div', {
           className: 'jr-drawer-header',
           onPointerDown: onHeaderDown,
           onPointerMove: onHeaderMove,
@@ -2512,6 +2560,15 @@ return {
         handles,
       )
 
+      // 静态 bundle 的整套 CSS 位于 @scope ([data-dsh-toolbox-scope="<bundle>"])；
+      // 嵌入分支也必须保留这个祖先，否则浏览器只会显示未样式化的 Host HTML。
+      if (embedded) {
+        return React.createElement('div', {
+          'data-dsh-toolbox-scope': RT.domValue(),
+          style: { display: 'flex', width: '100%', height: '100%', minHeight: 0 },
+        }, drawerEl)
+      }
+
       const overlay = React.createElement(React.Fragment, null,
         drawerEl,
         snapHint ? React.createElement('div', { className: 'jr-snap-indicator' }) : null,
@@ -2523,6 +2580,24 @@ return {
         'data-dsh-toolbox-scope': RT.domValue(),
         style: { display: 'contents' },
       }, overlay)
+    }
+
+    function FlowglassSidebarView(props) {
+      const active = useIntegrationActive()
+      if (!active) {
+        return React.createElement('div', {
+          'data-dsh-toolbox-scope': RT.domValue(),
+          style: { width: '100%', height: '100%' },
+        }, React.createElement('div', { className: 'tb-notice' }, '流镜当前设置为独立抽屉模式。'))
+      }
+      return React.createElement(Drawer, {
+        embedded: true,
+        visible: props.visible,
+        sessionId: props.scope && props.scope.sessionId,
+        cwd: props.scope && props.scope.cwd,
+        // 嵌入态由 better-sidebar scope 提供权威会话，不再读取 shell overlay 的 hook。
+        useSessions: () => undefined,
+      })
     }
 
     if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
@@ -2545,6 +2620,55 @@ return {
       },
       (props) => React.createElement(Drawer, props),
     ))
+
+    // better-sidebar 自身也通过同一个服务注册内置 Tab；流镜只消费公开契约，
+    // 不 value-import 对方代码。服务缺失时 inject fiber 保持等待，独立抽屉照常工作。
+    if (RT.bundleId === 'flow' && typeof ctx.inject === 'function') {
+      ctx.inject(['betterSidebar'], (sidebarCtx) => {
+        const service = sidebarCtx.get('betterSidebar')
+        if (!service || typeof service.registerTab !== 'function') return
+        const features = Array.isArray(service.features) ? service.features : []
+        const sync = () => integration.sync(service)
+        sync()
+        const offState = features.indexOf('stateSubscription') >= 0 && typeof service.subscribeState === 'function'
+          ? service.subscribeState(sync)
+          : null
+        const descriptor = {
+          id: FLOW_TAB_ID,
+          title: '流镜',
+          order: 35,
+          single: true,
+          icon: (size) => React.createElement('svg', {
+            width: size || 16, height: size || 16, viewBox: '0 0 16 16', fill: 'none',
+            stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', strokeLinejoin: 'round',
+          },
+            React.createElement('circle', { cx: 8, cy: 3, r: 1.5 }),
+            React.createElement('circle', { cx: 4, cy: 12.5, r: 1.5 }),
+            React.createElement('circle', { cx: 12, cy: 12.5, r: 1.5 }),
+            React.createElement('path', { d: 'M8 4.5v2.2M8 6.7L4 11M8 6.7l4 4.3' }),
+          ),
+          settings: features.indexOf('pluginSettings') < 0 ? undefined : {
+            pluginToggles: [{
+              key: 'displayMode',
+              title: '显示方式',
+              desc: '自动优先使用侧边卡片；也可保留原独立抽屉。',
+              type: 'select',
+              options: [
+                { value: 'auto', title: '自动', desc: '可用时使用侧边卡片，否则使用独立抽屉' },
+                { value: 'sidebar', title: '侧边卡片', desc: '使用 better-sidebar 的流镜 Tab' },
+                { value: 'drawer', title: '独立抽屉', desc: '保留流镜原来的独立入口与抽屉' },
+              ],
+            }],
+          },
+          component: (tabProps) => React.createElement(FlowglassSidebarView, tabProps),
+        }
+        sidebarCtx.effect(() => service.registerTab(descriptor))
+        sidebarCtx.effect(() => () => {
+          try { if (typeof offState === 'function') offState() } catch (e) {}
+          integration.sync(null)
+        })
+      })
+    }
   },
 }
 

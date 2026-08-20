@@ -24,6 +24,16 @@ const check = (label, cond, detail) => {
   check('零 dynamicCordisRunner/runner.define/dyn 路径', !/dynamicCordisRunner|runner\.define|runner\.run|dyn\//.test(combined))
   const pkg = JSON.parse(files.get('package.json'))
   check('package 声明原生 dsh.client', pkg.dsh.client.platform === 'web' && pkg.exports['./client'] === './lib/client.js')
+  check('Flow 包声明 optional better-sidebar peer',
+    pkg.peerDependencies['dsh-better-sidebar'] === '>=0.4.0'
+      && pkg.peerDependenciesMeta['dsh-better-sidebar'].optional === true)
+  const client = files.get('lib/client.js')
+  check('Flow Client 含 Sidebar Tab 与嵌入布局适配',
+    client.includes("FLOW_TAB_ID = 'dsh-flowglass:flow'")
+      && client.includes("ctx.inject(['betterSidebar']")
+      && client.includes('jr-drawer-embedded')
+      && !client.includes('if (embedded) return drawerEl')
+      && client.includes('props.visible !== false'))
   check('动态批准明确为 false', JSON.parse(files.get('BUILDINFO.json')).dynamicApprovalRequired === false)
 
   // 去掉 ESM import/export 后，在 mock Cordis 环境真实执行生成 Host。

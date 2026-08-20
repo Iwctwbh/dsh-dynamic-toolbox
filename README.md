@@ -19,6 +19,7 @@ The drawer's default tab turns the **current session into a living flowgraph**, 
 - **Drill-down** — click 「进入 →」on a subagent branch to open that child session's own flowgraph; breadcrumbs walk back level by level, nesting unlimited
 - **Parallel groups** — simultaneous tool calls in one step are wrapped in a dashed 「并行 ×N」frame; the running call pulses with a highlight so you always see exactly which step the agent is on
 - **Zero-jump details** — click a tool card for its full arguments/result, click a message card for full content with model + token metadata; details open in a side overlay instead of inflating the flow, so expand/collapse never moves your scroll position
+- **DSH-better-sidebar compatibility** — with `dsh-better-sidebar` installed, Flowglass registers a native session-scoped tab and pauses refresh while hidden; without it, the original standalone drawer remains available
 
 ## The toolbox
 
@@ -50,6 +51,8 @@ dsh plugin --profile web add dsh-dynamic-toolbox   # the full toolbox
 ```
 
 Compiled bundles are native static Host/Client packages: no dynamic approval, no `dyn/*`, Services/RPC/Slots/DOM/storage/events namespaced by bundleId. They don't hot-reload from disk — upgrade = add the new version + restart DSH.
+
+Optional: install `dsh-better-sidebar` alongside Flowglass, then open `流镜` from its `+` menu. Side card settings can choose automatic integration, the native sidebar tab, or the legacy standalone drawer.
 
 **Path B · autoboot from source (your own machine, install once)**
 
@@ -124,6 +127,7 @@ Coupling is deliberately narrow: a tool plugin only needs `ctx.get('toolboxRegis
 - **钻取**：点分支上的「进入 →」打开该子会话自己的流程图，「← 返回」逐级退回，嵌套不限层数
 - **并行分组**：同一步的多个并行调用用虚线框 +「并行 ×N」角标圈成一组；进行中的调用高亮脉冲，一眼看到智能体正跑到哪一步
 - **零跳跃详情**：点工具卡看完整传入/返回，点消息卡看完整内容（含模型/tokens 元信息）；详情挂右侧浮层、不撑高流程内容，展开收起滚动位置不动
+- **兼容 DSH-better-sidebar**：同时安装 `dsh-better-sidebar` 后，流镜会注册按会话隔离的原生 Tab，不可见时暂停刷新；未安装时继续使用原独立抽屉
 
 ## 工具箱
 
@@ -155,6 +159,8 @@ dsh plugin --profile web add dsh-dynamic-toolbox  # 完整工具箱
 ```
 
 编译包是原生静态 Host/Client 包：无动态批准、无 `dyn/*`，Service/RPC/Slot/DOM/storage/事件按 bundleId 隔离；不热重载——升级 = add 新版本 + 重启 DSH。
+
+可选：同时安装 `dsh-better-sidebar`，然后从其「+」菜单打开「流镜」。设置页「侧边卡片」可选择自动集成、原生侧边 Tab 或旧版独立抽屉。
 
 **方式 B · 源码自举（自己的机器，装一次）**
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-flowglass",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "流镜（DSH 原生静态插件）",
   "type": "module",
   "main": "./flowglass/lib/index.js",
@@ -50,6 +50,12 @@
     "node": ">=22.19"
   },
   "peerDependencies": {
+    "dsh-better-sidebar": ">=0.4.0",
     "react": "^18.3.1"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    }
   }
 }

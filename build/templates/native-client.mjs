@@ -1,7 +1,7 @@
 // ===== build/templates/native-client.mjs：DSH script-loader Client bundle =====
 // DSH 原生 Client 文件不是浏览器 ESM；必须预注册到 window.__ModuleLoader__。
 export const renderNativeClient = ({
-  packageName, profile, runtimeSource, toolboxClientSource, clientFeatures,
+  packageName, profile, runtimeSource, toolboxClientSource, clientFeatures, bridgeMethods,
 }) => {
   const factories = clientFeatures.map(({ key, source }) => {
     const id = key.replace(/[^A-Za-z0-9_$]/g, '_')
@@ -9,6 +9,9 @@ export const renderNativeClient = ({
   }).join('\n\n')
   const calls = clientFeatures.map(({ key }) => 'create_' + key.replace(/[^A-Za-z0-9_$]/g, '_') + '()').join(', ')
   const descriptorId = packageName + '/remote#' + profile.remoteNamespace + '/'
+  const remoteMethodNames = ['tools', 'panel', 'plugins', 'sessionInfo'].concat(bridgeMethods.map(({ method }) => method))
+  const bridgeMappings = bridgeMethods.map(({ rpc, method }) => `
+        [${JSON.stringify(rpc)}]: (args) => remote.${method}(args || {}),`).join('')
   return `window.__ModuleLoader__.load({
   id: ${JSON.stringify(packageName)},
   factory: (require) => {
@@ -37,7 +40,7 @@ ${runtimeSource}
     })
     const remoteContribution = Object.freeze({
       package: ${JSON.stringify(packageName)},
-      descriptors: Object.freeze(['tools', 'panel', 'plugins', 'sessionInfo'].map(descriptor)),
+      descriptors: Object.freeze(${JSON.stringify(remoteMethodNames)}.map(descriptor)),
     })
 
     const styleDisposers = new Set()
@@ -83,6 +86,7 @@ ${factories}
         [TOOLBOX_RUNTIME.rpc('panel')]: (args) => remote.panel(args || {}),
         [TOOLBOX_RUNTIME.rpc('plugins')]: (args) => remote.plugins(args || {}),
         [TOOLBOX_RUNTIME.rpc('session-info')]: (args) => remote.sessionInfo(args || {}),
+${bridgeMappings}
       }
       host = {
         call(methodName, args) {

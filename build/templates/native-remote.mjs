@@ -1,5 +1,5 @@
 // ===== build/templates/native-remote.mjs：原生 Client Remote contribution =====
-export const renderNativeRemote = ({ packageName, profile }) => `// DSH 原生静态工具箱 Remote 描述（构建生成，勿手改）
+export const renderNativeRemote = ({ packageName, profile, bridgeMethods }) => `// DSH 原生静态工具箱 Remote 描述（构建生成，勿手改）
 // 工具箱协议本身在 Host registry.panel 做结构校验；Remote 载荷是 JSON-safe 通用对象。
 const json = Object.freeze({ parse(value) { return value } })
 const descriptor = (method, implementation) => ({
@@ -23,6 +23,7 @@ export default Object.freeze({
     descriptor('panel'),
     descriptor('plugins'),
     descriptor('sessionInfo'),
+${bridgeMethods.map(({ method }) => `    descriptor(${JSON.stringify(method)}),`).join('\n')}
   ]),
 })
 `

@@ -4,7 +4,7 @@
 // Host 半职责：
 //   1. 工具箱 Tab「界面」（状态/缩略图/操作日志/说明；按钮条由 Client 半注入真实按钮——授权与复制要用户激活）；
 //   2. 命令队列（Host→Client 无推送通道：Client 长轮询 selfview/pull，挂起 25s 心跳；结果经 selfview/result 按 id 配对）；
-//   3. 模型工具 ui_snapshot / ui_capture / ui_click / ui_fill / ui_scroll / ui_press（harness.registerTool）。
+//   3. 模型工具 ui_snapshot / ui_capture / ui_click / ui_fill / ui_scroll / ui_press（动态模式走 harness，静态模式适配到原生 tools 服务）。
 // 截图 JPEG 落 <工作区>/.dsh-dynamic-toolbox/toolbox-selfview/shot-<ts>.jpg：subprocess stdin 批写二进制
 // （求值器无 Buffer、fs.writeText 只 UTF-8、argv 有 32KB 上限——stdin 批写是唯一稳路）。
 // state 只放 { notice }；缩略图/日志/最近截图元信息留闭包（state 轻量化，同 http/commitmsg 规矩）。

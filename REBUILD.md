@@ -116,7 +116,7 @@ AI 助手（Tab「AI 助手」）：preset 芯片切换 问答/翻译/优化/评
 
 ## 原生静态合集（installable bundle）
 
-`node scripts/build-toolbox-bundle.mjs --features flow,jira` 把同一源码生成为普通 DSH 双端包：`lib/index.js` 由 Loader 直接挂载 Host，`lib/client.js` 经 package.json 的 `dsh.client` / `exports["./client"]` 原生加载，`lib/remote.js` 提供 Host↔Client Remote。它**不使用 `dynamicCordisRunner`，不产生 `dyn/*`，不需要动态 Client 批准**，也不读取 `loader.js` / `plugins.json` / `payload.json`。静态功能集合在构建时固定，没有动态管理和磁盘热重载；升级 = 提高版本、重新 `npm pack`、`dsh plugin add`、重启 DSH。动态开发模式及本页其他重建流程完全保留。当前 `selfview` 仍依赖动态专用 harness bridge，静态编译器会在构建期拒绝，直至迁移为原生 Remote。
+`node scripts/build-toolbox-bundle.mjs --features flow,jira` 把同一源码生成为普通 DSH 双端包：`lib/index.js` 由 Loader 直接挂载 Host，`lib/client.js` 经 package.json 的 `dsh.client` / `exports["./client"]` 原生加载，`lib/remote.js` 提供 Host↔Client Remote。它**不使用 `dynamicCordisRunner`，不产生 `dyn/*`，不需要动态 Client 批准**，也不读取 `loader.js` / `plugins.json` / `payload.json`。静态功能集合在构建时固定，没有动态管理和磁盘热重载；升级 = 提高版本、重新 `npm pack`、`dsh plugin add`、重启 DSH。动态开发模式及本页其他重建流程完全保留。`selfview` 在静态模式下通过原生 Remote 的 pull/result/push 通道通信，模型工具直接注册到 DSH `tools` 服务；浏览器 `getDisplayMedia` 授权仍必须由用户点击触发。
 
 ## 数据与凭据
 

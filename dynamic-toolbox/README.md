@@ -1,6 +1,6 @@
 # 动态工具箱（dsh-dynamic-toolbox）
 
-这是 `dsh-flowglass` 仓库提供的**可选完整工具箱产品**，与默认的流镜包独立。只需要会话流程图时，请安装 `dsh-flowglass`；只有需要下列整套工具时才安装本包。
+这是 dsh-flowglass 仓库提供的**可选完整工具箱产品**，与默认的流镜包独立。只需要会话流程图时，请安装 `dsh-flowglass`；只有需要下列整套工具时才安装本包。
 
 本包是 DSH 原生静态 Host/Client 插件。
 
@@ -27,6 +27,7 @@
   - `lineage` — 会话血缘树 (Host-only)
   - `aiusage` — AI 旁路调用台账 (Host-only)
   - `quota` — API 配额查询 (Host-only)
+  - `selfview` — 界面自查（截图/快照/界面操作）
 
 ## 安装 / 升级 / 卸载
 

@@ -142,6 +142,13 @@
       "platform": "host-only",
       "order": 25,
       "purpose": "Host-only：查 Kimi for Coding（k3）套餐余量（周主额度 + 5h 滑动窗口 + 并发），GET /coding/v1/usages，Key 走 环境变量→~/.dsh/.credentials.yaml 凭据链，Node 子进程 https（沙箱内 curl 走 schannel 被拒、Node 走 TUN 可直连）；脱敏渲染，key 不出子进程"
+    },
+    {
+      "id": "selfview",
+      "name": "界面自查（截图/快照/界面操作）",
+      "platform": "host+client",
+      "order": 29,
+      "purpose": "Host+Client：查看并操作当前 WebGUI——getDisplayMedia 截屏（一次授权流复用；面板 [data-selfview-mount] 注入真实按钮条，授权/复制享用户激活）、语义 DOM 快照（[eN] ref→元素映射）、DOM 操作（点击/填充走原生 setter 绕 React 值跟踪/滚动/按键）、截图合成 ClipboardEvent 粘贴进聊天框附件区；Host 半注册模型工具 ui_snapshot/ui_capture/ui_click/ui_fill/ui_scroll/ui_press（JPEG 经 subprocess stdin 批写落 .dsh-dynamic-toolbox/toolbox-selfview/，模型随后 read_image 查看），Client 半长轮询 selfview/pull 收命令（25s 心跳）"
     }
   ]
 }

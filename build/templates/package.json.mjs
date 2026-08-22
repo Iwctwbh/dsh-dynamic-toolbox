@@ -1,5 +1,5 @@
 // ===== build/templates/package.json.mjs：原生 DSH 双端包 manifest =====
-export const renderPackageJson = ({ packageName, version, description, bundleId, repositoryDirectory }) => JSON.stringify({
+export const renderPackageJson = ({ packageName, version, description, bundleId, repositoryDirectory, hasModelTools }) => JSON.stringify({
   name: packageName,
   version,
   description,
@@ -34,6 +34,7 @@ export const renderPackageJson = ({ packageName, version, description, bundleId,
   files: ['lib/**', 'manifest.json', 'BUILDINFO.json', 'cordis.patch.yml', 'README.md', 'LICENSE'],
   engines: { node: '>=22.19' },
   peerDependencies: {
+    ...(hasModelTools ? { '@deepseek-ai/dsh-tools': '^0.1.0-rc.8' } : {}),
     ...(bundleId === 'flow' ? { 'dsh-better-sidebar': '>=0.4.0' } : {}),
     react: '^18.3.1',
   },

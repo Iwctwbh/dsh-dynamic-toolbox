@@ -25,7 +25,8 @@
       "search",
       "lineage",
       "aiusage",
-      "quota"
+      "quota",
+      "selfview"
     ],
     "dependencyAdded": [],
     "all": [
@@ -48,10 +49,11 @@
       "search",
       "lineage",
       "aiusage",
-      "quota"
+      "quota",
+      "selfview"
     ]
   },
-  "fingerprint": "e36a8a2a964cf78a",
+  "fingerprint": "03bdfab01bebf6f9",
   "builderVersion": "2",
   "sourceHashes": {
     "plugins/aiassist/tool.js": "e7d0b0be25b446968fd0e460279fcbd3b704a403f087940364f778038e0f5a81",
@@ -69,8 +71,10 @@
     "plugins/prompt/tool.js": "b2e2feb7af90d6b91204dda12e843c4b4852cb7ece3f62bdbafbc4b663e1eb7e",
     "plugins/quota/tool.js": "8a9a48249456e87d60914b543adafade405d4c95b7badf30e5aa46e3019c469f",
     "plugins/search/tool.js": "3059afe83c8e20b0648bb22df8cf97a7d0db1a1fba65b3c2863acdf1ed1af324",
+    "plugins/selfview/client.js": "bb044f137b3de92f0976c8637e4ad6c1a6abe95ac583937fc065f63aed4963df",
+    "plugins/selfview/tool.js": "580ff5b7061aabaa18bad170306890e441d3982a36eaa93a1a4c1631c2f7f20d",
     "plugins/theme-teal/client.js": "111fffeed9e52e30741c4142bb21d7add9b892fce274d5191c6a11965f56cd64",
-    "plugins/toolbox/client.js": "321bf6e8d0537eb9c5dc831318b32790568ca7aa1af1228273bdf24927fb2bbb",
+    "plugins/toolbox/client.js": "9353ef1a6e7c52cfce2c42b987303e06e7bfd9d85c1f3efd53a0c0ff2464101a",
     "plugins/toolbox/host.js": "d55d8b8075bb4cb15bd333fbbb023b1198755ba3fab5d3bb26c9f1781dfd1276",
     "plugins/tools/tool.js": "36c18813aa99fe3e702b302e68a1592e006fbc4b25ffda1f77010c696d89dfa7",
     "plugins/trace/tool.js": "b6d6a094836e0f539c887b56afa7c2c43623ad48e0539065898f787c06d2de42",

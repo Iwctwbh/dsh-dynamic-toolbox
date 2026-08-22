@@ -22,5 +22,8 @@ export default Object.freeze({
     descriptor('panel'),
     descriptor('plugins'),
     descriptor('sessionInfo'),
+    descriptor("selfviewPull"),
+    descriptor("selfviewResult"),
+    descriptor("selfviewPush"),
   ]),
 })

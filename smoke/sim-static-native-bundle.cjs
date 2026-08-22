@@ -84,9 +84,28 @@ const check = (label, cond, detail) => {
   const sessionInfo = await remote.sessionInfo({ session: 's1' })
   check('原生 Remote sessionInfo 可解析 cwd', sessionInfo.ok && sessionInfo.cwd === 'D:/work/native')
 
-  // 不支持的动态专用 selfview 必须构建期明确失败，而不是产出运行期残包。
-  const unsupported = buildBundle(loader, { features: ['selfview'] })
-  check('selfview 未迁移前构建期明确拒绝', !unsupported.ok && unsupported.errors.some((error) => error.includes('原生静态 Remote')))
+  // selfview 共享同一份功能源码，但静态包必须改走原生 Remote 与 tools service。
+  const selfviewBuilt = buildBundle(loader, { features: ['selfview'], version: '0.1.0' })
+  const selfviewHost = selfviewBuilt.ok ? selfviewBuilt.files.get('lib/index.js') : ''
+  const selfviewClient = selfviewBuilt.ok ? selfviewBuilt.files.get('lib/client.js') : ''
+  const selfviewRemote = selfviewBuilt.ok ? selfviewBuilt.files.get('lib/remote.js') : ''
+  const selfviewPkg = selfviewBuilt.ok ? JSON.parse(selfviewBuilt.files.get('package.json')) : {}
+  check('selfview 可编译为原生静态功能', selfviewBuilt.ok, selfviewBuilt.errors && selfviewBuilt.errors.join('；'))
+  check('selfview 静态桥接含三条 Remote',
+    selfviewHost.includes('selfviewPull(request)')
+      && selfviewClient.includes('["selfview/pull"]')
+      && selfviewRemote.includes('descriptor("selfviewPush")'))
+  check('selfview 模型工具改走原生 tools service',
+    selfviewHost.includes("from '@deepseek-ai/dsh-tools'")
+      && selfviewHost.includes("ctx.get('tools')")
+      && selfviewPkg.peerDependencies['@deepseek-ai/dsh-tools'] === '^0.1.0-rc.8')
+
+  const largeBuilt = buildBundle(loader, {
+    features: ['jira', 'git', 'files', 'flow', 'flowedit', 'trace', 'http', 'ports', 'calc', 'usage', 'prompt', 'context', 'aiassist', 'tools', 'search', 'lineage', 'aiusage', 'quota', 'selfview'],
+    version: '0.1.0',
+  })
+  const largeId = largeBuilt.ok ? JSON.parse(largeBuilt.files.get('BUILDINFO.json')).bundleId : ''
+  check('大功能组合自动生成合法短 bundleId', largeBuilt.ok && /^bundle-\d+-[a-f0-9]{12}$/.test(largeId) && largeId.length <= 40, largeId || (largeBuilt.errors || []).join('；'))
 
   console.log(failures ? ('\n共 ' + failures + ' 项失败') : '\n全部通过')
   process.exit(failures ? 1 : 0)

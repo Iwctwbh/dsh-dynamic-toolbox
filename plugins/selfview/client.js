@@ -1,5 +1,6 @@
 // ===== selfview-client.js：界面自查 Client 半 =====
-// 经 Host 半 selfview/client-impl RPC 从磁盘拉取求值（ctx/React/host/styles/console 显式下传）。
+// 动态模式经 Host 半 selfview/client-impl RPC 从磁盘拉取；静态模式在构建期直接打包，
+// 两种模式共用 host.call('selfview/*') 通道。
 // 职责：
 //   1. getDisplayMedia 截屏流（一次授权持续复用；抓帧不需要用户激活，授权必须——所以授权/复制按钮
 //      由本半注入真实 DOM 按钮到面板的 [data-selfview-mount]，React 合成事件与 RPC 都没有用户激活）；

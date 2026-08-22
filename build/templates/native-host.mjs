@@ -2,7 +2,7 @@
 // 不使用 dynamicCordisRunner；所选 feature 源码在构建期包进普通函数，由静态 Loader 直接挂载。
 
 export const renderNativeHost = ({
-  packageName, profile, runtimeSource, sharedHostSource, hostFeatures, inject,
+  packageName, profile, runtimeSource, sharedHostSource, hostFeatures, inject, bridgeMethods, hasModelTools,
 }) => {
   const factories = hostFeatures.map(({ key, source }) => {
     const id = key.replace(/[^A-Za-z0-9_$]/g, '_')
@@ -10,8 +10,15 @@ export const renderNativeHost = ({
   }).join('\n\n')
   const factoryCalls = hostFeatures.map(({ key }) => 'create_' + key.replace(/[^A-Za-z0-9_$]/g, '_') + '()').join(', ')
 
+  const bridgeRemoteMethods = bridgeMethods.map(({ rpc, method }) => `
+  ${method}(request) {
+    return callNativeBridge(${JSON.stringify(rpc)}, request || {})
+  }`).join('')
+  const exposedMethods = ['tools', 'panel', 'plugins', 'sessionInfo'].concat(bridgeMethods.map(({ method }) => method))
+
   return `// ===== ${profile.displayName} · DSH 原生静态 Host（构建生成，勿手改） =====
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
+${hasModelTools ? "import { defineTool } from '@deepseek-ai/dsh-tools'" : ''}
 
 export const name = ${JSON.stringify(packageName)}
 export const inject = ${JSON.stringify(inject)}
@@ -54,6 +61,32 @@ const makeStaticRegistry = () => {
 }
 
 ${sharedHostSource}
+
+// Compatibility seam for features shared with dynamic mode. In a static
+// bundle harness.handle is backed by native Remote methods, while model tools
+// are registered directly against DSH's tools service.
+const nativeBridgeHandlers = new Map()
+const callNativeBridge = async (name, request) => {
+  const handler = nativeBridgeHandlers.get(name)
+  if (!handler) return { ok: false, error: '原生 RPC 未注册: ' + name }
+  return await handler(request)
+}
+const harness = {
+  handle(name, handler) {
+    if (typeof name !== 'string' || !name || typeof handler !== 'function') return () => {}
+    nativeBridgeHandlers.set(name, handler)
+    return () => { if (nativeBridgeHandlers.get(name) === handler) nativeBridgeHandlers.delete(name) }
+  },
+  ${hasModelTools ? `defineTool,
+  registerTool(ctx, tool) {
+    const service = ctx.get('tools')
+    if (!service || typeof service.register !== 'function') throw new Error('tools 服务不可用')
+    const dispose = service.register(tool)
+    if (typeof dispose === 'function') ctx.effect(() => dispose)
+    return dispose
+  },` : `defineTool(tool) { return tool },
+  registerTool() { throw new Error('当前静态合集未启用模型工具服务') },`}
+}
 
 ${factories}
 
@@ -106,9 +139,9 @@ class NativeToolboxRemote extends TypertRemoteService {
       } catch (error) {}
     }
     return { ok: false, error: '会话不存在或不可读: ' + sid }
-  }
+  }${bridgeRemoteMethods}
 }
-for (const method of ['tools', 'panel', 'plugins', 'sessionInfo']) exposeRemote(NativeToolboxRemote, method)
+for (const method of ${JSON.stringify(exposedMethods)}) exposeRemote(NativeToolboxRemote, method)
 
 export async function apply(ctx) {
   const registry = makeStaticRegistry()

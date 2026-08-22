@@ -23,6 +23,7 @@ const check = (label, cond, detail) => {
   const combined = ['lib/index.js', 'lib/client.js', 'lib/remote.js'].map((file) => files.get(file)).join('\n')
   check('零 dynamicCordisRunner/runner.define/dyn 路径', !/dynamicCordisRunner|runner\.define|runner\.run|dyn\//.test(combined))
   const pkg = JSON.parse(files.get('package.json'))
+  check('默认 Flow 构建产出 dsh-flowglass', pkg.name === 'dsh-flowglass', pkg.name)
   check('package 声明原生 dsh.client', pkg.dsh.client.platform === 'web' && pkg.exports['./client'] === './lib/client.js')
   check('Flow 包声明 optional better-sidebar peer',
     pkg.peerDependencies['dsh-better-sidebar'] === '>=0.4.0'
@@ -35,6 +36,11 @@ const check = (label, cond, detail) => {
       && !client.includes('if (embedded) return drawerEl')
       && client.includes('props.visible !== false'))
   check('动态批准明确为 false', JSON.parse(files.get('BUILDINFO.json')).dynamicApprovalRequired === false)
+
+  const defaultBuilt = buildBundle(loader, { version: '0.1.0' })
+  check('空功能选择默认构建 Flowglass', defaultBuilt.ok
+    && JSON.parse(defaultBuilt.files.get('package.json')).name === 'dsh-flowglass'
+    && JSON.parse(defaultBuilt.files.get('BUILDINFO.json')).bundleId === 'flow')
 
   // 去掉 ESM import/export 后，在 mock Cordis 环境真实执行生成 Host。
   let hostSource = files.get('lib/index.js')

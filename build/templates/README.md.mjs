@@ -1,7 +1,11 @@
 // ===== build/templates/README.md.mjs：生成包说明模板 =====
-export const renderReadme = ({ packageName, version, bundleId, displayName, featureLines }) => `# ${displayName}（${packageName}）
+export const renderReadme = ({ packageName, version, bundleId, displayName, featureLines, isFlowglass }) => {
+  const positioning = isFlowglass
+    ? '这是 dsh-flowglass 仓库的默认产品与默认构建目标，是 **DSH 原生静态 Host/Client 插件**。'
+    : '这是 dsh-flowglass 仓库提供的**可选完整工具箱产品**，与默认的流镜包独立。只需要会话流程图时，请安装 `dsh-flowglass`；只有需要下列整套工具时才安装本包。\n\n本包是 DSH 原生静态 Host/Client 插件。'
+  return `# ${displayName}（${packageName}）
 
-由 dsh-flowglass 构建的 **DSH 原生静态 Host/Client 插件**。
+${positioning}
 
 - bundleId: \`${bundleId}\`
 - 版本: ${version}
@@ -31,3 +35,4 @@ dsh plugin --profile web remove ${packageName}
 - 不调用 dynamicCordisRunner；
 - 业务数据仍按工具约定写当前工作区的 \`.dsh-dynamic-toolbox/\`。
 `
+}

@@ -12,7 +12,11 @@ import { renderReadme } from './templates/README.md.mjs'
 
 export const buildBundle = (loader, opts) => {
   const errors = validateCatalog(PLUGINS, loader)
-  const sel = normalizeSelection(PLUGINS, opts.features || [])
+  // Flowglass is the repository's primary product. An omitted/empty feature
+  // selection therefore builds Flowglass; callers must explicitly select
+  // additional features when they want a toolbox bundle.
+  const requestedFeatures = opts.features && opts.features.length ? opts.features : ['flow']
+  const sel = normalizeSelection(PLUGINS, requestedFeatures)
   if (!sel.ok) errors.push(...sel.errors)
   if (errors.length) return { ok: false, errors }
 
@@ -21,7 +25,8 @@ export const buildBundle = (loader, opts) => {
   const featureEntries = selected.slice(1)
   const bundleId = opts.id || sel.selected.slice(1).sort().join('-')
   if (!BUNDLE_ID_RE.test(bundleId)) errors.push('bundleId 不合法: ' + bundleId + '（须匹配 ' + BUNDLE_ID_RE + '）')
-  const packageName = opts.name || ('dsh-' + bundleId + '-toolbox')
+  const isFlowglass = bundleId === 'flow' && featureEntries.length === 1 && featureEntries[0].key === 'flow'
+  const packageName = opts.name || (isFlowglass ? 'dsh-flowglass' : 'dsh-' + bundleId + '-toolbox')
   if (!PACKAGE_NAME_RE.test(packageName) || packageName.length > 214) errors.push('npm package name 不合法: ' + packageName)
   const label = opts.label || (featureEntries.length === 1
     ? featureEntries[0].bundle.defaultLabel
@@ -83,9 +88,15 @@ export const buildBundle = (loader, opts) => {
   }
   const featureLines = featureEntries.map((entry) => '  - `' + entry.key + '` — ' + entry.name).join('\n')
   const files = new Map([
-    ['package.json', renderPackageJson({ packageName, version, description: label + '（DSH 原生静态工具箱）', bundleId, repositoryDirectory: opts.repositoryDirectory })],
+    ['package.json', renderPackageJson({
+      packageName,
+      version,
+      description: isFlowglass ? '流镜（DSH 原生静态插件）' : label + '（DSH 原生静态工具箱）',
+      bundleId,
+      repositoryDirectory: opts.repositoryDirectory,
+    })],
     ['cordis.patch.yml', renderCordisPatch({ bundleId, packageName })],
-    ['README.md', renderReadme({ packageName, version, bundleId, displayName: label, featureLines, approvalCount: 0 })],
+    ['README.md', renderReadme({ packageName, version, bundleId, displayName: label, featureLines, isFlowglass })],
     ['manifest.json', JSON.stringify(manifest, null, 2) + '\n'],
     ['BUILDINFO.json', JSON.stringify(buildInfo, null, 2) + '\n'],
     ['lib/index.js', indexJs],

@@ -1,4 +1,6 @@
-# 工具箱 — 重建指南（v6 文件夹结构 + v5 二级加载 + 框架自举）
+# 完整 Toolbox — 动态重建指南（独立开发路径）
+
+> 本文只适用于源码方式运行的完整动态 Toolbox，不是 `dsh-flowglass` 的默认安装说明。普通流镜用户请返回 [`README.md`](README.md)，通过 `dsh plugin --profile web add dsh-flowglass` 安装；原生静态 Flowglass 不需要执行本文的 define、run 或自举流程。
 
 > **最简重建（AI 执行规范，最高优先级，覆盖本页其他说明）**：用户要求重建工具箱时，AI 只做三步——① `cordis_define` ← `plugins/toolbox/payload.json`；② `cordis_run(mode: run)`（等用户在 GUI 点批准）；③ 按本页「AI 手动重建后的持久化询问」问一次。**不做**：读其他文档、探索仓库、跑 make-payloads/smoke/任何测试、调试、分析、总结汇报——三步做完即止，回复不超过三行。仅当 define/run 返回失败时才允许排查，且只报一句失败原因。非创造模式没有 cordis 工具时，只回一句「请切到创造模式再叫我重建」。
 

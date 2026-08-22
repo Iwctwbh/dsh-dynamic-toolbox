@@ -40,11 +40,11 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 if (opts.help) {
-  console.log(`用法: node scripts/build-toolbox-bundle.mjs --features a,b [选项]
-  --features a,b   标准选择接口（按 catalog order 规范化，与输入顺序无关）
+  console.log(`用法: node scripts/build-toolbox-bundle.mjs [--features a,b] [选项]
+  --features a,b   标准选择接口（默认 flow，即构建 dsh-flowglass；按 catalog order 规范化）
   --flow / --jira…  各功能别名快捷参数（可选: ${[...aliases.keys()].join(', ')}）
   --id <id>        bundleId（默认按选择 key 字典序以 - 连接；${BUNDLE_ID_RE}）
-  --name <pkg>     npm package name（默认 dsh-<id>-toolbox；发布必须显式提供）
+  --name <pkg>     npm package name（flow 默认 dsh-flowglass；其他默认 dsh-<id>-toolbox）
   --label <文本>   侧栏/抽屉显示名称（单功能默认功能 label，多功能默认「A + B 工具箱」）
   --version <ver>  semver（默认 0.0.0-dev；发布必须显式提供合法 semver）
   --repo-dir <dir>  发布时 package.json 的 repository.directory（回指仓库子目录，供目录 backlink 验证）
